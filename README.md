@@ -1,12 +1,14 @@
 # aegis-runtime
 
-**Status:** Not part of the WHOLE-SYSTEM-E2E v1 release (Drake, 2026-10-10). The production runtime in [aien-sovereign-core](https://github.com/aien-spark/aien-sovereign-core) carries the mandatory capability checks, the approval desk, effect authorization and fail-closed behaviour, and WHOLE-SYSTEM-E2E measures them there.
+aegis-runtime is an agent runtime written in native Rust: a local gateway (WebSocket, server-sent events and REST on port 18096), a heartbeat loop that claims and runs queued tasks, a dependency-aware task workflow, and SQLite storage. It sends model calls to a local OpenAI-compatible model server when started with `--inference http`; the default `--inference embedded` backend is a mock that loads no model and ignores `--model-path` and `--tokenizer-path`.
+
+An attachment of [Aienix](https://github.com/aien-dev/aienix), the core tree of AIEN. It lives in its own repository and plugs into the core at a boundary.
+
+**Status (2026-10-18): pre-alpha, version 0.2.0, not part of the WHOLE-SYSTEM-E2E v1 release** (Drake, 2026-10-10). The production runtime in [aien-sovereign-core](https://github.com/aien-dev/aien-sovereign-core) carries the mandatory capability checks, the approval desk, effect authorization and fail-closed behaviour, and WHOLE-SYSTEM-E2E measures them there. The last merged changes (2026-10-15 and 2026-10-16) removed Modular MAX and Mojo and moved testing to AIEN's Spark pipeline ([docs/PIPELINE.md](docs/PIPELINE.md)). Open pull requests propose more workflow work for delegated tasks (G1 to G6); none of it is on `main`.
 
 ## Copyright
 
 Copyright (c) 2026 Drake Stapleton <aien@aienos.com> and AIEN Contributors. Authored by Drake Stapleton in collaboration with AIEN.
-
-Sovereign agent runtime written in native Rust, built for NVIDIA Grace Blackwell GB10 hardware. Model inference goes to the local model seat (any OpenAI-compatible server on port 18006) when started with `--inference http`. The default `--inference embedded` backend is a mock: it loads no model and ignores `--model-path` and `--tokenizer-path`.
 
 ## Architecture
 
@@ -56,10 +58,13 @@ Sovereign agent runtime written in native Rust, built for NVIDIA Grace Blackwell
 6. **SQLite Persistence**:
    Embedded SQLite store running in Write-Ahead-Logging (WAL) mode for transactional task and message durability.
 
+7. **Task workflow and failure handling**:
+   A dependency-aware task workflow ([docs/WORKFLOW-DAG.md](docs/WORKFLOW-DAG.md)) and structured agent failure records with effect-safe retry rules ([docs/FAILURE-PROVENANCE.md](docs/FAILURE-PROVENANCE.md)).
+
 ## Build and Execution
 
 ### Prerequisites
-- Rust 1.80+ (`cargo`)
+- A stable Rust toolchain (`cargo`); the crate uses edition 2021
 - A checkout of [aien-dev/aien-protocols](https://github.com/aien-dev/aien-protocols) next to this one at `../aien-protocols` (six path dependencies in `Cargo.toml`)
 - Optional: an OpenAI-compatible model server on port 18006 (the local model seat), only for `--inference http`
 - Linux aarch64 (Grace Blackwell GB10) or x86_64
