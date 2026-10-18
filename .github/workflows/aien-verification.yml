@@ -83,11 +83,11 @@ jobs:
             echo "blocked=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Checkout the pinned crumb tool source (aien-architecture @ 94fffbcf88492c5a1c54211b5126c8a6c370a98d)
+      - name: Checkout the pinned crumb tool source (aien-architecture @ 12ad0141b41ec67ef5aa51cb4e1815894c1083bb)
         uses: actions/checkout@v4
         with:
           repository: aien-dev/aien-architecture
-          ref: 94fffbcf88492c5a1c54211b5126c8a6c370a98d
+          ref: 12ad0141b41ec67ef5aa51cb4e1815894c1083bb
           path: .crumb-tool-src
 
       - name: Build the crumb tool, then remove its source from this tree
