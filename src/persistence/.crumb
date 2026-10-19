@@ -10,25 +10,6 @@
     }
   ],
   "extensions": {
-    "generated": {
-      "children": [
-        {
-          "digest": "d93b6e1bf5a44b5420187abafb6a5f5ada04c7313b00f22e76f47463d9203801",
-          "last_commit": "1b0c299",
-          "name": "sqlite",
-          "purpose": "Directory src/persistence/sqlite. Purpose not yet described by a human."
-        }
-      ],
-      "children_root": "sha256:ff0c3b249e81b22fe9883290a85ad0c6bcff707f2badfcf8999ccdd90c4cdf43",
-      "compiled_at": "2026-10-13T02:40:48Z",
-      "compiler": "crumb-compile/1",
-      "digest": "sha256:dc247d1a321533bf38e95c0ab235fb86ae78fbd333a48ee90b3e3f201b9f3a26",
-      "evidence_files": 0,
-      "evidence_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "files": 11,
-      "generated_at_commit": "8724580bdb385ec058f937912c2b88e006a67dc6",
-      "source_tree": "sha256:57dcd6415067d5b0ed85fba279ecf9b727333bc16bf0311065d4add46af9121f"
-    },
     "owner_lane": "",
     "seed": {
       "files": [
