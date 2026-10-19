@@ -1,0 +1,20 @@
+# tests/gates/crumb.gate
+# RETIRED (RFC-0003 Amendment 2, 2026-10-19): crumbs are advisory notes and are never a merge check.
+# This manifest stays only because the planner refuses a head that deletes a gate that exists at its base
+# (GATE_REMOVED). The step checks nothing and passes. It is no longer in .aien/always.
+gate: CRUMB-VERIFY
+manifest_version: 2
+owner: aegis-runtime
+requires:
+  - portable
+inputs:
+  - tests/gates/crumb.gate
+run:
+  exec: tests/gates/run.sh
+  args: ["crumb-verify"]
+expects:
+  exit: 0
+  verdict: PASS
+timeout: 1m
+exactness: EXACT
+cache_scope: portable

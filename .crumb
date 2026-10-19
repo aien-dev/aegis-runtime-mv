@@ -17,9 +17,6 @@
       "role": ""
     }
   ],
-  "extensions": {
-    "owner_lane": ""
-  },
   "layer": "root",
   "name": "aegis-runtime",
   "purpose": "aegis-runtime is an agent runtime written in Rust.",
