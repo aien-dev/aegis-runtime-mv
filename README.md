@@ -152,10 +152,9 @@ tests/gates/run.sh clippy
 tests/gates/run.sh test
 tests/gates/run.sh zero-disk-secrets
 tests/gates/run.sh anti-slop
-tests/gates/run.sh crumb-verify
 ```
 
-The last one needs the `crumb` tool on your `PATH` (or set `CRUMB`). `.aien/always` lists the gates that run on every commit: `CRUMB-VERIFY`, `AEGIS-ZERO-DISK-SECRETS` and `AEGIS-ANTI-SLOP`.
+`.aien/always` lists the gates that run on every commit: `AEGIS-ZERO-DISK-SECRETS` and `AEGIS-ANTI-SLOP`. The `.crumb` files are notes for agents. They are never a merge check.
 
 The Spark signs each result and publishes it to [aien-dev/aien-receipts](https://github.com/aien-dev/aien-receipts/tree/main/aegis-runtime), one folder per tested commit. The only required GitHub check, `AIEN Verification`, verifies that signed result.
 

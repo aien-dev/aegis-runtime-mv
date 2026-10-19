@@ -18,32 +18,10 @@
     }
   ],
   "extensions": {
-    "generated_policy": "on-demand",
-    "owner_lane": "",
-    "seed": {
-      "files": [
-        "AGENTS.md",
-        "AGENT_CODE_OF_CONDUCT.md",
-        "CONSTITUTION.md",
-        "COVENANT.md",
-        "Cargo.lock",
-        "Cargo.toml",
-        "LICENSE",
-        "README.md",
-        "agent.json",
-        "install.sh",
-        "llms.txt"
-      ],
-      "git": {
-        "branch": "hardening/LF-aegis-loopback-auth",
-        "head": "7c13ac9",
-        "remote": "git@github.com:aien-dev/aegis-runtime.git"
-      },
-      "purpose_auto": "Repository root aegis-runtime. Purpose not yet described by a human."
-    }
+    "owner_lane": ""
   },
   "layer": "root",
   "name": "aegis-runtime",
-  "purpose": "Repository root aegis-runtime. Purpose not yet described by a human.",
+  "purpose": "aegis-runtime is an agent runtime written in Rust.",
   "schema_version": "1.0.0"
 }

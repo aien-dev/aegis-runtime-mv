@@ -23,9 +23,6 @@ need_protocols() {
 }
 
 case "$step" in
-  crumb-verify)
-    "${CRUMB:-crumb}" verify .
-    ;;
   fmt)
     need_protocols
     cargo fmt --all -- --check

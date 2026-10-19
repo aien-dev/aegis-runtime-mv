@@ -7,13 +7,14 @@
 # the rerun. Pull requests labeled ready-to-merge are merged by the pipeline (docs/PIPELINE.md).
 #
 # What it does: checkout; read the trust anchors from the BASE ref (origin/main), never from
-# the head under test (amendment A1); crumb verify; fetch <repo>/<sha>/bundle.json from
+# the head under test (amendment A1); fetch <repo>/<sha>/bundle.json from
 # aien-dev/aien-receipts; verify the bundle signature and content with the pinned aien-test
 # build; run the repository's portable smoke set (gates whose requires is only "portable").
 #
-# GitHub-hosted compute: this workflow compiles only the two pinned verifier tools (the crumb
-# checker, and aien-test once the repository is enrolled). It never builds or tests this
-# repository's own code; the portable smoke set is text scans and format checks only.
+# GitHub-hosted compute: this workflow compiles only the pinned verifier tool aien-test, and
+# only once the repository is enrolled. Crumbs are notes, never a check (RFC-0003 A2). It
+# never builds or tests this repository's own code; the portable smoke set is text scans and
+# format checks only.
 #
 # PHASE 3 rules (marked "PHASE3" below): a missing bundle is NOT_RUN (this check fails; the
 # pipeline reruns it after publication), and a trust-surface change fails unless the verified
@@ -82,23 +83,6 @@ jobs:
           else
             echo "blocked=false" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Checkout the pinned crumb tool source (aien-architecture @ 12ad0141b41ec67ef5aa51cb4e1815894c1083bb)
-        uses: actions/checkout@v4
-        with:
-          repository: aien-dev/aien-architecture
-          ref: 12ad0141b41ec67ef5aa51cb4e1815894c1083bb
-          path: .crumb-tool-src
-
-      - name: Build the crumb tool, then remove its source from this tree
-        run: |
-          make -C .crumb-tool-src/tools/crumb crumb
-          mkdir -p "$RUNNER_TEMP/bin" && cp .crumb-tool-src/tools/crumb/crumb "$RUNNER_TEMP/bin/crumb"
-          rm -rf .crumb-tool-src
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-
-      - name: Crumbs must be exactly what the compiler produces now (stays GitHub-hosted, D11)
-        run: crumb verify .
 
       - name: Install Stable Rust Toolchain (for the pinned aien-test build and the smoke set)
         if: steps.anchors.outputs.enrolled == 'true'
