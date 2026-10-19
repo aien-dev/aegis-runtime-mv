@@ -16,7 +16,8 @@ aegis-runtime is an attachment of [Aienix](https://github.com/aien-dev/aienix), 
 - **Not part of the WHOLE-SYSTEM-E2E v1 release** (Drake, 2026-10-10). The production runtime in aien-sovereign-core carries the mandatory capability checks, the approval desk, effect authorization and fail-closed behaviour, and WHOLE-SYSTEM-E2E measures them there.
 - **No published release of 0.2.0.** The GitHub release `v0.1.0` (2026-09-20) is from before the rename from OpenClaw. `v0.2.0` is an unpublished draft from 2026-09-19.
 - **Recent changes on `main`:** Modular MAX and Mojo removed (#49, 2026-10-15). The Spark became the test judge (#51, 2026-10-16). rustls updated to 0.23.46 for four security advisories (#66, 2026-10-18). The hosted test workflows were removed, so the Spark is now the only place tests run (#69, 2026-10-18).
-- **Open, not on `main`:** the delegated task workflow work G1 to G6 (pull requests #60 to #65, tracked in issue #53), the crumb on-demand migration (#70) and a docs/PIPELINE.md update (#71).
+- **Merged on 2026-10-19:** docs/PIPELINE.md describes phase 3 as finished (#71), and the `.crumb` files stopped storing generated data; the crumb tool computes it on demand (#70).
+- **Open, not on `main`:** the delegated task workflow work G1 to G6 (pull requests #60 to #65, tracked in issue #53).
 
 ## Architecture
 
