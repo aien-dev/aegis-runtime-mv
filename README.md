@@ -4,7 +4,7 @@ aegis-runtime is an agent runtime written in Rust. It builds one program, `aegis
 
 ## Where it fits in AIEN
 
-aegis-runtime is an attachment of [Aienix](https://github.com/aien-dev/aienix), the core tree of AIEN. It lives in its own repository and plugs into the core at a boundary.
+aegis-runtime is an attachment of [AienOS](https://github.com/aien-dev/aienix), the core tree of AIEN. It lives in its own repository and plugs into the core at a boundary.
 
 - [aien-dev/aien-protocols-mv](https://github.com/aien-dev/aien-protocols-mv): the shared protocol crates. This repository needs a checkout of it to build (see Build).
 - [aien-dev/aien-sovereign-core-mv](https://github.com/aien-dev/aien-sovereign-core-mv): the production runtime. It also holds the Spark test tools (`tools/aien-test`, `tools/aien-local-ci`).
