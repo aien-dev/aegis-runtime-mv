@@ -1,0 +1,239 @@
+   Compiling aegis v0.2.0 (/Users/drakestapleton/.hermes/cache/scratch/loop9-aegis68-workspace/aegis-containment)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.46s
+     Running unittests src/lib.rs (target/debug/deps/aegis-5f541efe796a249e)
+
+running 55 tests
+test auth::tests::bind_defaults_to_loopback_only ... ok
+test auth::tests::only_listed_reads_are_public ... ok
+test enforcement::tests::non_string_command_refused ... ok
+test enforcement::tests::probe_gating_is_on_by_default_and_cannot_be_disabled ... ok
+test enforcement::tests::rejects_empty_skill_name ... ok
+test enforcement::tests::unknown_or_disguised_skill_names_refused ... ok
+test agent::tests::test_agent_token_estimation_and_boundary_pruning ... ok
+test enforcement::tests::catalogued_shell_allowed ... ok
+test failure::tests::default_policy_never_retries_and_ceiling_applies ... ok
+test enforcement::tests::destructive_shell_refused ... ok
+test failure::tests::eligibility_only_for_no_effect_idempotent_rejected_or_unavailable ... ok
+test failure::tests::cause_chain_is_bounded_and_messages_truncated ... ok
+test failure::tests::root_cause_follows_parents_and_survives_cycles ... ok
+test auth::tests::token_rules ... ok
+test failure::tests::old_json_without_new_fields_still_loads ... ok
+test failure::tests::cancel_token_wakes_waiter ... ok
+test failure::tests::payload_is_digest_only_and_secret_never_serialized ... ok
+test inference::tests::test_embedded_inference_backend_reference_execution ... ok
+test inference::tests::test_format_messages_to_prompt ... ok
+test agent::tests::test_agent_engine_creation_and_skills ... ok
+test inference::tests::test_generate_chat_with_tools_offline_fail_closed ... ok
+test inference::tests::test_generate_chat_offline_fail_closed ... ok
+test agent::tests::test_agent_tool_error_handling_and_recovery ... ok
+test inference::tests::test_parse_structured_tool_calls_plain_response ... ok
+test inference::tests::test_parse_structured_tool_calls_json_block ... ok
+test inference::tests::test_parse_structured_tool_calls_tag ... ok
+test security::tests::local_catalog_requires_the_whole_command ... ok
+test agent::tests::test_agent_multiturn_conversational_history ... ok
+test security::tests::test_workspace_capability_read_write_containment ... ok
+test skills::tests::test_skill_registry_registration_and_execution ... ok
+test skills::tests::test_to_openai_tools_formatting ... ok
+test skills::tests::test_filesystem_skills_with_workspace_containment ... ok
+test vault::tests::test_vault_empty_key_resolution ... ok
+test gateway::tests::test_gateway_health_handler_unit ... ok
+test vault::tests::test_vault_multiline_redaction ... ok
+test vault::tests::test_vault_prevention_of_disk_secret_writes ... ok
+test heartbeat::tests::test_heartbeat_prohibited_root_command_rejection ... ok
+test vault::tests::test_vault_streaming_chunk_redaction ... ok
+test vault::tests::production_does_not_read_the_environment ... ok
+test vector_math::tests::test_cosine_similarity ... ok
+test vector_math::tests::test_identical_and_opposite_vectors ... ok
+test vector_math::tests::test_nan_and_inf_handling ... ok
+test vector_math::tests::test_orthogonal_vectors ... ok
+test vector_math::tests::test_analytical_parity ... ok
+test vector_math::tests::test_temperature_scale ... ok
+test vector_math::tests::test_temperature_scale_edge_cases ... ok
+test vector_math::tests::test_token_projection ... ok
+test vector_math::tests::test_token_projection_and_entropy ... ok
+test vector_math::tests::test_zero_vectors ... ok
+test vault::tests::test_vault_missing_key_fallback ... ok
+test heartbeat::tests::test_heartbeat_pulse_and_task_execution ... ok
+test heartbeat::tests::test_overlapping_pulses_run_a_task_once ... ok
+test vault::tests::test_vault_resolution_and_redaction ... ok
+test security::tests::test_workspace_capability_shell_execution ... ok
+test security::tests::dispatch_shell_refuses_unclassified_text ... ok
+
+test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running unittests src/main.rs (target/debug/deps/aegis-e3753239961374f3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/aegis_tests.rs (target/debug/deps/aegis_tests-4ad2b6020f0cdb45)
+
+running 23 tests
+test test_agent_token_budget_boundary_conditions ... ok
+test test_gateway_health_endpoint ... ok
+test test_agent_offline_inference_fail_closed ... ok
+test test_gateway_offline_inference_fail_closed ... ok
+test test_gateway_agent_run_complex_payloads_and_edge_paths ... ok
+test test_gateway_agent_run_endpoint ... ok
+test test_gateway_completions_error_handling_and_validation ... ok
+test test_agent_multiturn_accumulation_and_error_recovery ... ok
+test test_gateway_concurrent_requests_under_tokio_spawns ... ok
+test test_gateway_openai_multiturn_completions ... ok
+test test_gateway_openai_completions_endpoint ... ok
+test test_gateway_openai_streaming_endpoint ... ok
+test test_gateway_openai_streaming_formatting_and_terminal_chunk ... ok
+test test_vault_streaming_redaction_and_zero_disk_keys ... ok
+test test_vector_math_invariants_and_edge_cases ... ok
+test test_vector_math_operations ... ok
+test test_gateway_probe_endpoint ... ok
+test test_gateway_task_creation_and_listing ... ok
+test test_gateway_websocket_lifecycle ... ok
+test test_gateway_submillisecond_health_latency_benchmark ... ok
+test test_gateway_skills_endpoints ... ok
+test test_gateway_shell_execution ... ok
+test test_gateway_websocket_lifecycle_ping_pong_and_close ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/canonical_abi_tests.rs (target/debug/deps/canonical_abi_tests-b7ae0b6bf3de8338)
+
+running 4 tests
+test test_canonical_agent_state_branching_lineage ... ok
+test test_aegis_ids_bidirectional_conversion_with_protocol_types ... ok
+test test_aegis_event_to_canonical_agent_event_mapping ... ok
+test test_aegis_session_to_canonical_agent_state_and_digest ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/embedded_inference_tests.rs (target/debug/deps/embedded_inference_tests-89e384bd1022a72f)
+
+running 7 tests
+test test_embedded_model_reference_creation ... ok
+test test_real_model_embedded_execution_if_present ... ok
+test test_agent_engine_with_embedded_backend_trait ... ok
+test test_embedded_inference_chat_streaming ... ok
+test test_pure_rust_chat_template_formatting ... ok
+test test_gateway_with_embedded_inference_streaming ... ok
+test test_embedded_structured_tool_calling_flow ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/failure_provenance_tests.rs (target/debug/deps/failure_provenance_tests-deb9d0fc7c6e7e06)
+
+running 14 tests
+test approval_pending_is_never_auto_continued ... ok
+test default_policy_does_not_retry ... ok
+test failing_tool_identifies_step_cause_and_flows_through_event_bus ... ok
+test chained_dependent_failure_resolves_to_original ... ok
+test idempotent_read_retries_with_bounded_attempts_and_provenance ... ok
+test cause_message_is_bounded_in_a_real_run ... ok
+test success_between_failures_breaks_the_chain ... ok
+test unavailable_backend_is_unavailable_with_no_effect ... ok
+test seeded_secret_never_appears_in_failure_output ... ok
+test real_registry_paths_classify_refusal_and_keep_old_output_text ... ok
+test uncertain_or_mutating_failures_are_never_retried ... ok
+test cancellation_in_flight_write_is_uncertain_and_halts_the_run ... ok
+test cancellation_of_read_is_no_effect_and_before_dispatch_never_dispatches ... ok
+test timeout_certainty_follows_skill_contract_and_is_never_retried ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/gateway_auth_tests.rs (target/debug/deps/gateway_auth_tests-544a866316bf2b43)
+
+running 10 tests
+test public_reads_stay_open ... ok
+test skill_allowlist_holds_behind_the_token ... ok
+test path_tricks_do_not_reach_public_list ... ok
+test correct_token_admits_catalogued_shell_only ... ok
+test task_list_needs_the_operator_token ... ok
+test websocket_handshake_needs_the_token ... ok
+test no_configured_token_means_protected_routes_are_closed ... ok
+test protected_routes_refuse_missing_or_wrong_tokens ... ok
+test serve_refuses_a_short_operator_token ... ok
+test serve_refuses_non_loopback_bind_without_opt_in ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.25s
+
+     Running tests/install_script_tests.rs (target/debug/deps/install_script_tests-0c6976df651d9ba6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/policy_guard_tests.rs (target/debug/deps/policy_guard_tests-7ada839d89818202)
+
+running 2 tests
+test test_probe_policy_guard_reference_execution ... ok
+test test_probe_policy_guard_fails_closed_on_strict_threshold ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/probe_gate_tests.rs (target/debug/deps/probe_gate_tests-f0b1627e51e14119)
+
+running 1 test
+test strict_probe_threshold_refuses_on_every_path ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/stage2_primitives_tests.rs (target/debug/deps/stage2_primitives_tests-2125b93497a8ea6a)
+
+running 6 tests
+test test_domain_ids_and_prefixes ... ok
+test test_message_roles_and_ids ... ok
+test test_orchestration_run_and_budget ... ok
+test test_doctrine_decision_and_action_receipt ... ok
+test test_session_lifecycle_and_branching ... ok
+test test_event_bus_publish_and_subscribe ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/stage3_4_persistence_tests.rs (target/debug/deps/stage3_4_persistence_tests-4e755f8c7a78f714)
+
+running 6 tests
+test test_legacy_task_claim_is_exclusive ... ok
+test test_sqlite_message_store_lifecycle ... ok
+test test_legacy_database_interop ... ok
+test test_sqlite_action_and_approval_store ... ok
+test test_sqlite_session_crud_and_optimistic_concurrency ... ok
+test test_sqlite_run_store_single_active_run_constraint ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/workflow_dag_tests.rs (target/debug/deps/workflow_dag_tests-ddf6324a16b5d7b9)
+
+running 25 tests
+test agent_outcome_unrecorded_failure_is_failed_and_uncertain ... ok
+test caller_cancel_still_stops_the_workflow_through_the_run_token ... ok
+test approval_pending_blocks_dependents_and_is_not_success ... ok
+test cancellation_cancels_running_and_pending_and_starts_nothing_new ... ok
+test no_task_starts_once_the_budget_is_exhausted ... ok
+test cancel_while_waiting_for_approval_leaves_nothing_unfinished ... ok
+test panicking_task_is_failed_uncertain_and_releases_its_permit ... ok
+test rejects_cycle ... ok
+test rejects_duplicate_task_and_duplicate_edge ... ok
+test rejects_self_dependency ... ok
+test rejects_unknown_predecessor ... ok
+test rejects_zero_parallelism ... ok
+test runner_error_text_is_truncated_before_it_is_recorded ... ok
+test skip_propagates_transitively ... ok
+test fixture_a_b_independent_c_waits_d_blocked_on_failure ... ok
+test budget_exhaustion_does_not_cancel_the_callers_token ... ok
+test parallel_run_sequence_is_gapless_and_orders_dependencies ... ok
+test uncertain_outcome_is_never_rescheduled ... ok
+test event_sequence_is_deterministic_and_matches_the_bus ... ok
+test snapshot_is_serializable_and_deterministic ... ok
+test timeout_is_failed_timeout_with_runner_certainty ... ok
+test total_budget_cancels_the_workflow ... ok
+test demo_code_test_eval_dag_sequential_vs_parallel ... ok
+test max_parallel_is_honoured ... ok
+test dependents_do_not_start_when_the_budget_expires_as_a_task_finishes ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+   Doc-tests aegis
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

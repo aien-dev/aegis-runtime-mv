@@ -1,0 +1,40 @@
+{
+  "base": "f85dbe3910dd2c29faff74a3a96d657531ca1320",
+  "protocol": "4529f393546c87d5ae673e5d66d700c8e8c5db03",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "commands": {
+    "full-suite": {
+      "argv": [
+        "cargo",
+        "test",
+        "--locked"
+      ],
+      "exit": 0,
+      "sha256": "a5bac693ce029f7375e8f6d524304339efd52e954903ca2d1e0594061d7e3a56"
+    },
+    "fmt": {
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "clippy": {
+      "argv": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "sha256": "b3044b74288061fd26c514b2e63a223ea359ffffee93a598ea8bfd609da20e8a"
+    }
+  }
+}

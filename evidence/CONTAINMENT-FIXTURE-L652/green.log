@@ -1,0 +1,9 @@
+   Compiling aegis v0.2.0 (/Users/drakestapleton/.hermes/cache/scratch/loop9-aegis68-workspace/aegis-containment)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.62s
+     Running unittests src/lib.rs (target/debug/deps/aegis-5f541efe796a249e)
+
+running 1 test
+test skills::tests::test_filesystem_skills_with_workspace_containment ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 54 filtered out; finished in 0.00s
+

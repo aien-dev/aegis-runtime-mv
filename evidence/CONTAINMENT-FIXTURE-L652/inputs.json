@@ -1,0 +1,41 @@
+{
+  "functional_source": "468b6809dcf3d54766e5132f4554703cdb66c938",
+  "base": "f85dbe3910dd2c29faff74a3a96d657531ca1320",
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+  "full_suite": {
+    "passed": 153,
+    "failed": 0,
+    "ignored": 0
+  },
+  "targeted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "--lib",
+    "skills::tests::test_filesystem_skills_with_workspace_containment",
+    "--",
+    "--exact",
+    "--nocapture"
+  ],
+  "observed_targeted_exits": {
+    "red": 101,
+    "green": 0,
+    "missing-guard": 101
+  },
+  "guard_identical_to_base": true,
+  "input_sha256": {
+    "Cargo.toml": "508ef42f47d005db1bba5e01148dad49c5efe84a72db5d937ec5b4b01f614523",
+    "Cargo.lock": "7349ad64c81a4a4f099dc0ab56fdd3a306293c95959e114464f6ca62c0bdbd64",
+    "src/skills.rs": "553f3d1c547655f5982253d36b9d399e3077bb0c4f5826deef163ec7610e4d65",
+    "src/security.rs": "71ebe9a7c3d2b31b0bd5649628daf30f91e2e955e3f6246c6008b382272faa5f"
+  },
+  "logs": {
+    "fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "full-suite.log": "a5bac693ce029f7375e8f6d524304339efd52e954903ca2d1e0594061d7e3a56",
+    "red.log": "19196b419271ab6c4cd16a954e2e0c6e4eb325abf127cce6e418066067b8d040",
+    "green.log": "f17ed9dcc39084f4ba50ea31b493307a951a22e8d26308b1fbb79a1ce3662c0f",
+    "clippy.log": "b3044b74288061fd26c514b2e63a223ea359ffffee93a598ea8bfd609da20e8a",
+    "missing-guard.log": "9947de0387e8c70f3290119fedc602bf34c18c9463d5d9048764f7213309ab68"
+  }
+}
