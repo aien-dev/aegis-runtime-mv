@@ -1,0 +1,9 @@
+   Compiling aegis v0.2.0 (/Users/drakestapleton/.hermes/cache/scratch/loop9-aegis68-workspace/aegis-runtime)
+error[E0432]: unresolved import `aegis::durability`
+ --> tests/delivery_scheduling_tests.rs:1:12
+  |
+1 | use aegis::durability::DurableRuntime;
+  |            ^^^^^^^^^^ could not find `durability` in `aegis`
+
+For more information about this error, try `rustc --explain E0432`.
+error: could not compile `aegis` (test "delivery_scheduling_tests") due to 1 previous error

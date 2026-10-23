@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod auth;
 pub mod defense;
+pub mod durability;
 pub mod events;
 pub mod execution;
 pub mod failure;

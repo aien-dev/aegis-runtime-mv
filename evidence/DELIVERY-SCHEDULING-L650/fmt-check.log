@@ -1,0 +1,113 @@
+Diff in /Users/drakestapleton/.hermes/cache/scratch/loop9-aegis68-workspace/aegis-runtime/src/durability.rs:44:
+                UNIQUE(session, message_ref)
+              );",
+         )?;
+-        Ok(Self { conn: Arc::new(Mutex::new(conn)) })
++        Ok(Self {
++            conn: Arc::new(Mutex::new(conn)),
++        })
+     }
+ 
+     /// Persist the complete reply before returning it to a transport caller.
+Diff in /Users/drakestapleton/.hermes/cache/scratch/loop9-aegis68-workspace/aegis-runtime/src/durability.rs:51:
+     /// Length-prefixing prevents ambiguity between adjacent UTF-8 fields.
+-    pub fn record_reply(&self, session: &str, message_ref: &str, reply: &str) -> rusqlite::Result<ReplyObligation> {
++    pub fn record_reply(
++        &self,
++        session: &str,
++        message_ref: &str,
++        reply: &str,
++    ) -> rusqlite::Result<ReplyObligation> {
+         let mut hash = Sha256::new();
+         for field in [session.as_bytes(), message_ref.as_bytes(), reply.as_bytes()] {
+             hash.update((field.len() as u64).to_be_bytes());
+Diff in /Users/drakestapleton/.hermes/cache/scratch/loop9-aegis68-workspace/aegis-runtime/src/durability.rs:56:
+             hash.update(field);
+         }
+         let id = format!("sha256:{:x}", hash.finalize());
+-        let mut conn = self.conn.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
++        let mut conn = self
++            .conn
++            .lock()
++            .map_err(|_| rusqlite::Error::InvalidQuery)?;
+         let tx = conn.transaction()?;
+-        let existing: Option<(String, String)> = tx.query_row(
+-            "SELECT id, reply FROM durable_replies WHERE session=?1 AND message_ref=?2",
+-            params![session, message_ref], |r| Ok((r.get(0)?, r.get(1)?)),
+-        ).optional()?;
++        let existing: Option<(String, String)> = tx
++            .query_row(
++                "SELECT id, reply FROM durable_replies WHERE session=?1 AND message_ref=?2",
++                params![session, message_ref],
++                |r| Ok((r.get(0)?, r.get(1)?)),
++            )
++            .optional()?;
+         if let Some((existing_id, existing_reply)) = existing {
+             if existing_reply != reply || existing_id != id {
+                 return Err(rusqlite::Error::ConstraintViolation);
+Diff in /Users/drakestapleton/.hermes/cache/scratch/loop9-aegis68-workspace/aegis-runtime/src/durability.rs:70:
+             tx.execute("INSERT INTO durable_replies(id,session,message_ref,reply,state) VALUES (?1,?2,?3,?4,'pending')", params![id, session, message_ref, reply])?;
+         }
+         tx.commit()?;
+-        Ok(ReplyObligation { id, session: session.to_owned(), message_ref: message_ref.to_owned(), reply: reply.to_owned(), may_be_duplicate: false })
++        Ok(ReplyObligation {
++            id,
++            session: session.to_owned(),
++            message_ref: message_ref.to_owned(),
++            reply: reply.to_owned(),
++            may_be_duplicate: false,
++        })
+     }
+ 
+     pub fn pending_replies(&self) -> rusqlite::Result<Vec<ReplyObligation>> {
+Diff in /Users/drakestapleton/.hermes/cache/scratch/loop9-aegis68-workspace/aegis-runtime/src/durability.rs:77:
+-        let conn = self.conn.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
++        let conn = self
++            .conn
++            .lock()
++            .map_err(|_| rusqlite::Error::InvalidQuery)?;
+         let mut stmt = conn.prepare("SELECT id,session,message_ref,reply FROM durable_replies WHERE state='pending' ORDER BY rowid")?;
+-        let rows = stmt.query_map([], |r| Ok(ReplyObligation { id:r.get(0)?, session:r.get(1)?, message_ref:r.get(2)?, reply:r.get(3)?, may_be_duplicate:true }))?;
++        let rows = stmt.query_map([], |r| {
++            Ok(ReplyObligation {
++                id: r.get(0)?,
++                session: r.get(1)?,
++                message_ref: r.get(2)?,
++                reply: r.get(3)?,
++                may_be_duplicate: true,
++            })
++        })?;
+         rows.collect()
+     }
+ 
+Diff in /Users/drakestapleton/.hermes/cache/scratch/loop9-aegis68-workspace/aegis-runtime/src/durability.rs:83:
+     /// Acknowledge only after the client confirms application receipt.
+     pub fn acknowledge_reply(&self, id: &str) -> rusqlite::Result<bool> {
+-        let conn = self.conn.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
+-        Ok(conn.execute("UPDATE durable_replies SET state='acked' WHERE id=?1 AND state='pending'", [id])? == 1)
++        let conn = self
++            .conn
++            .lock()
++            .map_err(|_| rusqlite::Error::InvalidQuery)?;
++        Ok(conn.execute(
++            "UPDATE durable_replies SET state='acked' WHERE id=?1 AND state='pending'",
++            [id],
++        )? == 1)
+     }
+ }
+ 
+Diff in /Users/drakestapleton/.hermes/cache/scratch/loop9-aegis68-workspace/aegis-runtime/tests/delivery_scheduling_tests.rs:6:
+     let dir = tempdir().unwrap();
+     let path = dir.path().join("delivery.sqlite");
+     let runtime = DurableRuntime::open(&path).unwrap();
+-    let first = runtime.record_reply("sess/a", "msg:1", "exact reply").unwrap();
+-    let second = runtime.record_reply("sess/a", "msg:1", "exact reply").unwrap();
++    let first = runtime
++        .record_reply("sess/a", "msg:1", "exact reply")
++        .unwrap();
++    let second = runtime
++        .record_reply("sess/a", "msg:1", "exact reply")
++        .unwrap();
+     assert_eq!(first.id, second.id);
+     assert_eq!(runtime.pending_replies().unwrap().len(), 1);
+     drop(runtime);
