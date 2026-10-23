@@ -1,0 +1,82 @@
+{
+  "url": "https://api.github.com/repos/aien-dev/aegis-runtime-mv/issues/68",
+  "repository_url": "https://api.github.com/repos/aien-dev/aegis-runtime-mv",
+  "labels_url": "https://api.github.com/repos/aien-dev/aegis-runtime-mv/issues/68/labels{/name}",
+  "comments_url": "https://api.github.com/repos/aien-dev/aegis-runtime-mv/issues/68/comments",
+  "events_url": "https://api.github.com/repos/aien-dev/aegis-runtime-mv/issues/68/events",
+  "html_url": "https://github.com/aien-dev/aegis-runtime-mv/issues/68",
+  "id": 5913141677,
+  "node_id": "I_kwDOUg2Oxc8AAAABYHNhrQ",
+  "number": 68,
+  "title": "Hermes prior art 5: delivery and scheduling guarantees stated per path (at-least-once reply ledger, at-most-once cron)",
+  "user": {
+    "login": "drakestapleton",
+    "id": 213298340,
+    "node_id": "U_kgDODLaspA",
+    "avatar_url": "https://avatars.githubusercontent.com/u/213298340?v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/drakestapleton",
+    "html_url": "https://github.com/drakestapleton",
+    "followers_url": "https://api.github.com/users/drakestapleton/followers",
+    "following_url": "https://api.github.com/users/drakestapleton/following{/other_user}",
+    "gists_url": "https://api.github.com/users/drakestapleton/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/drakestapleton/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/drakestapleton/subscriptions",
+    "organizations_url": "https://api.github.com/users/drakestapleton/orgs",
+    "repos_url": "https://api.github.com/users/drakestapleton/repos",
+    "events_url": "https://api.github.com/users/drakestapleton/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/drakestapleton/received_events",
+    "type": "User",
+    "user_view_type": "public",
+    "site_admin": false
+  },
+  "labels": [
+
+  ],
+  "state": "open",
+  "locked": false,
+  "assignees": [
+
+  ],
+  "milestone": null,
+  "comments": 0,
+  "created_at": "2026-10-18T19:11:59Z",
+  "updated_at": "2026-10-18T19:11:59Z",
+  "closed_at": null,
+  "assignee": null,
+  "author_association": "CONTRIBUTOR",
+  "issue_field_values": [
+
+  ],
+  "type": null,
+  "active_lock_reason": null,
+  "sub_issues_summary": {
+    "total": 0,
+    "completed": 0,
+    "percent_completed": 0
+  },
+  "issue_dependencies_summary": {
+    "blocked_by": 0,
+    "total_blocked_by": 0,
+    "blocking": 0,
+    "total_blocking": 0
+  },
+  "body": "Hermes source: gateway/delivery_ledger.py, gateway/delivery.py, cron/scheduler_tick.py, cron/occurrences.py, cron/scheduler_authority.py, cron/scheduler_liveness.py, cron/quota_hold.py, hermes_state_runtime.py.\n\nMechanics to implement in the gateway and heartbeat scheduler:\n- Reply delivery is at-least-once: the reply row is written to a ledger before the send; a crash-recovered send carries a visible duplicate marker. Obligation id is a content hash of session key, message reference and reply text, so re-recording collapses to one row. Owner stamps are pid plus process start time, compare-and-set.\n- Scheduled jobs fire at most once: the schedule is advanced before the job runs; if the advance cannot be persisted the job is skipped on purpose; each fire is identified by its exact scheduled instant; an unclear outcome pauses the job and only a matching verified receipt lifts that pause; liveness is silence since the last progress stamp, not run length.\n- Per-session admission queue with a runtime epoch and generation fences; rows started by an older epoch become unknown and need an operator's word.\n- Each guarantee is stated in the code next to the choice.\n\nAllen's heartbeat and the hive's queue have no stated guarantee today.\n\nAcceptance: kill during send shows one marked duplicate and no silent loss; kill during a cron fire shows no second fire and a paused job with its receipt path; a wedged job is reclaimed while a long busy one is not.\n\nParent: aien-dev/aien-architecture#267. Research note: aien-architecture docs/research/hermes-agent-prior-art.md. Prior art: Hermes Agent, Nous Research, MIT, commit 5480918 (2026-10-18). No Hermes code is copied; the mechanism is re-implemented from reading. The module header credits Hermes Agent, Nous Research, the MIT licence and the commit. Rust now, pure part effect-free and content-addressed so it can move to Omega (ADR 0024). No Python.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+  "closed_by": null,
+  "reactions": {
+    "url": "https://api.github.com/repos/aien-dev/aegis-runtime-mv/issues/68/reactions",
+    "total_count": 0,
+    "+1": 0,
+    "-1": 0,
+    "laugh": 0,
+    "hooray": 0,
+    "confused": 0,
+    "heart": 0,
+    "rocket": 0,
+    "eyes": 0
+  },
+  "timeline_url": "https://api.github.com/repos/aien-dev/aegis-runtime-mv/issues/68/timeline",
+  "performed_via_github_app": null,
+  "state_reason": null,
+  "pinned_comment": null
+}
