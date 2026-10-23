@@ -446,7 +446,11 @@ mod tests {
     #[test]
     fn test_filesystem_skills_with_workspace_containment() {
         let tmp = tempfile::tempdir().unwrap();
-        let cap = WorkspaceCapability::new(tmp.path()).unwrap();
+        let workspace = tmp.path().join("workspace");
+        let outside = tmp.path().join("outside.txt");
+        std::fs::write(&outside, "outside capability boundary").unwrap();
+        assert!(outside.is_file());
+        let cap = WorkspaceCapability::new(&workspace).unwrap();
         let registry = SkillRegistry::with_workspace(cap);
 
         let w_req = SkillExecutionRequest {
@@ -479,15 +483,21 @@ mod tests {
         assert!(l_res.success);
         assert!(l_res.output.contains("test_write.txt"));
 
-        // Test security escape rejection
+        // The outside target must exist, so this exercises containment rather
+        // than depending on the host temporary directory's depth and /etc.
         let escape_req = SkillExecutionRequest {
             skill_name: "read_file".to_string(),
             arguments: serde_json::json!({
-                "path": "../../etc/passwd",
+                "path": "../outside.txt",
             }),
         };
         let escape_res = registry.execute(&escape_req);
         assert!(!escape_res.success);
-        assert!(escape_res.error.unwrap().contains("Security rejection"));
+        let error = escape_res.error.unwrap();
+        assert!(error.contains("Security rejection"), "{error}");
+        assert_eq!(
+            std::fs::read_to_string(&outside).unwrap(),
+            "outside capability boundary"
+        );
     }
 }
