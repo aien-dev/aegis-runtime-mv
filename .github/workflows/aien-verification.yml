@@ -1,41 +1,32 @@
-# AIEN Verification: the GitHub thin gate (ADR 0033 Decision 11, inventory contract C5).
+# AIEN: GitHub-hosted checks and Alpha verification (ADR 0033 Decision 11, inventory contract C5).
 #
-# PHASE 3 (2026-10-16, Drake's agreement 2026-10-15: "the Spark becomes the only test judge").
-# This is a required check. The Spark worker (aien-test worker) runs the tests and signs a
-# bundle; tools/aien-local-ci/pipeline.sh in aien-sovereign-core publishes it to aien-receipts
-# and reruns this workflow once it is there. A missing bundle fails this check (NOT_RUN) until
-# the rerun. Pull requests labeled ready-to-merge are merged by the pipeline (docs/PIPELINE.md).
-#
-# What it does: checkout; read the trust anchors from the BASE ref (origin/main), never from
-# the head under test (amendment A1); crumb verify; fetch <repo>/<sha>/bundle.json from
-# aien-dev/aien-receipts; verify the bundle signature and content with the pinned aien-test
-# build; run the repository's portable smoke set (gates whose requires is only "portable").
-#
-# GitHub-hosted compute: this workflow compiles only the two pinned verifier tools (the crumb
-# checker, and aien-test once the repository is enrolled). It never builds or tests this
-# repository's own code; the portable smoke set is text scans and format checks only.
-#
-# PHASE 3 rules (marked "PHASE3" below): a missing bundle is NOT_RUN (this check fails; the
-# pipeline reruns it after publication), and a trust-surface change fails unless the verified
-# bundle's signed plan shows the operator ran it by hand (plan.blocked == null).
-name: AIEN Verification
+# Drake 2026-10-24: nothing on GitHub gates a merge; main requires no status check. The Spark
+# qualifies Alpha builds instead: the local pipeline pushes annotated tags alpha/YYYYMMDD.N.
+#   AIEN Checks (pull_request, push to main): advisory. crumb verify, then for enrolled repos
+#     (.aien/verify.pub on origin/main) the portable smoke set named at origin/main.
+#   AIEN Alpha (push of an alpha/* tag): the tagged commit must be on main; its signed Spark bundle
+#     from aien-receipts must verify (--require-full) against the trust anchors on origin/main.
+# GitHub-hosted compute builds only the pinned verifier tools, never this repository's code.
+name: AIEN
 
 on:
   pull_request:
   push:
     branches: [main]
+    tags: ['alpha/*']
 
 permissions:
   contents: read
 
 jobs:
-  verify:
-    name: AIEN Verification
+  checks:
+    name: AIEN Checks
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       REPO_SLUG: aien-dev/aegis-runtime
-      AIEN_TEST_PIN: c26f4d7ac3156088469b27462390f5b08ef4f436
+      AIEN_TEST_PIN: a51042b61b87355c0850ef82ba409a46e153a1ff
       RECEIPTS_RAW: https://raw.githubusercontent.com/aien-dev/aien-receipts/main
     steps:
       - name: Checkout the head under test
@@ -43,44 +34,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Resolve the commit under test and the base ref
+      - name: Resolve the base ref
         id: ids
         run: |
-          if [ "${{ github.event_name }}" = pull_request ]; then
-            sha="${{ github.event.pull_request.head.sha }}"
-          else
-            sha="${{ github.sha }}"
-          fi
           git fetch -q origin main
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "base=$(git rev-parse origin/main)" >> "$GITHUB_OUTPUT"
-          echo "commit under test: $sha"
           echo "base (trust anchors): $(git rev-parse origin/main)"
 
-      - name: "Trust anchors from the base ref (A1: never from the head under test)"
+      - name: "Enrollment from the base ref (never from the head under test)"
         id: anchors
         run: |
-          mkdir -p "$RUNNER_TEMP/anchors"
-          base="${{ steps.ids.outputs.base }}"
-          if git show "$base:.aien/verify.pub" > "$RUNNER_TEMP/anchors/verify.pub" 2>/dev/null; then
+          if git cat-file -e "${{ steps.ids.outputs.base }}:.aien/verify.pub" 2>/dev/null; then
             echo "enrolled=true" >> "$GITHUB_OUTPUT"
-            git show "$base:.aien/always" > "$RUNNER_TEMP/anchors/always" 2>/dev/null || : > "$RUNNER_TEMP/anchors/always"
-            git show "$base:.aien/unmapped-ok" > "$RUNNER_TEMP/anchors/unmapped-ok" 2>/dev/null || : > "$RUNNER_TEMP/anchors/unmapped-ok"
-            echo "verify.pub (base): $(cat "$RUNNER_TEMP/anchors/verify.pub")"
           else
             echo "enrolled=false" >> "$GITHUB_OUTPUT"
-            # PHASE3: an enrolled repository whose base ref lost its key cannot verify anything.
-            echo "::error::.aien/verify.pub is not on the base ref: no trusted key, nothing can be verified."
-            exit 1
-          fi
-          # Trust-surface changes are run by the operator by hand (A1): BLOCKED_OPERATOR.
-          changed=$(git diff --name-only "$base...${{ steps.ids.outputs.sha }}" -- .aien tests/gates .github/workflows .forgejo tools/aien-test || true)
-          if [ -n "$changed" ]; then
-            echo "blocked=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::BLOCKED_OPERATOR: this head changes the trust surface (the bundle must show an operator run):"; echo "$changed"
-            # PHASE3: enforced in the verify step: the verified bundle's signed plan must say blocked == null.
-          else
-            echo "blocked=false" >> "$GITHUB_OUTPUT"
+            echo "not enrolled: no .aien/verify.pub on the base ref; the portable smoke set is skipped"
           fi
 
       - name: Checkout the pinned crumb tool source (aien-architecture @ 12ad0141b41ec67ef5aa51cb4e1815894c1083bb)
@@ -97,26 +65,26 @@ jobs:
           rm -rf .crumb-tool-src
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
-      - name: Crumbs must be exactly what the compiler produces now (stays GitHub-hosted, D11)
+      - name: Crumbs must be exactly what the compiler produces now
         run: crumb verify .
 
-      - name: Install Stable Rust Toolchain (for the pinned aien-test build and the smoke set)
-        if: steps.anchors.outputs.enrolled == 'true'
+      - name: Install Stable Rust Toolchain (for the pinned aien-test build)
         uses: dtolnay/rust-toolchain@stable
+        if: steps.anchors.outputs.enrolled == 'true'
         with:
           components: rustfmt
 
       - name: Checkout the pinned aien-test source (aien-sovereign-core @ ${{ env.AIEN_TEST_PIN }})
-        if: steps.anchors.outputs.enrolled == 'true'
         uses: actions/checkout@v4
+        if: steps.anchors.outputs.enrolled == 'true'
         with:
           repository: aien-dev/aien-sovereign-core
           ref: ${{ env.AIEN_TEST_PIN }}
           path: .aien-test-src
 
       - name: Cache the pinned aien-test build
-        if: steps.anchors.outputs.enrolled == 'true'
         uses: actions/cache@v4
+        if: steps.anchors.outputs.enrolled == 'true'
         with:
           path: |
             ~/.cargo/registry
@@ -128,51 +96,13 @@ jobs:
         if: steps.anchors.outputs.enrolled == 'true'
         run: |
           cargo build --release -p aien-test --manifest-path .aien-test-src/Cargo.toml
-          cp .aien-test-src/target/release/aien-test "$RUNNER_TEMP/bin/aien-test" 2>/dev/null || { mkdir -p "$RUNNER_TEMP/bin"; cp .aien-test-src/target/release/aien-test "$RUNNER_TEMP/bin/aien-test"; }
+          mkdir -p "$RUNNER_TEMP/bin" && cp .aien-test-src/target/release/aien-test "$RUNNER_TEMP/bin/aien-test"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
           rm -rf .aien-test-src
           git status --porcelain --untracked-files=normal
 
-      - name: Fetch the signed verification bundle for this commit
-        id: bundle
-        run: |
-          url="$RECEIPTS_RAW/aegis-runtime/${{ steps.ids.outputs.sha }}/bundle.json"
-          echo "bundle url: $url"
-          if curl -fsSL "$url" -o "$RUNNER_TEMP/bundle.json"; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            # PHASE3: NOT_RUN. The Spark pipeline reruns this workflow after it publishes the bundle.
-            echo "::error::NOT_RUN: no signed Spark bundle for ${{ steps.ids.outputs.sha }} yet. The Spark pipeline reruns this check once the bundle is published."
-            exit 2
-          fi
-
-      - name: Verify the bundle with the base-ref public key
-        if: steps.bundle.outputs.present == 'true' && steps.anchors.outputs.enrolled == 'true'
-        run: |
-          required=$(grep -v '^#' "$RUNNER_TEMP/anchors/always" | grep -v '^$' | paste -sd, -)
-          set +e
-          aien-test verify-bundle "$RUNNER_TEMP/bundle.json" \
-            --repo "github.com/$REPO_SLUG" \
-            --commit "${{ steps.ids.outputs.sha }}" \
-            --pubkey "$RUNNER_TEMP/anchors/verify.pub" \
-            ${required:+--require "$required"}
-          rc=$?
-          set -e
-          echo "verify-bundle exit $rc (0 PASS, 1 FAIL, 2 NOT_RUN, 3 REJECTED)"
-          [ "$rc" = 0 ] || exit "$rc"
-          # PHASE3: a trust-surface head passes only on an operator run: the plan member is inside
-          # the signed bytes just verified, and only an operator run of such a head has blocked == null.
-          if [ "${{ steps.anchors.outputs.blocked }}" = true ]; then
-            if jq -e '.plan.blocked == null' "$RUNNER_TEMP/bundle.json" >/dev/null; then
-              echo "trust-surface change: the signed bundle shows an operator run (plan.blocked == null)"
-            else
-              echo "::error::BLOCKED_OPERATOR: this head changes the trust surface and the bundle is not from an operator run"; exit 1
-            fi
-          fi
-
       - name: Portable smoke set (gates whose requires is only portable, named at the base ref)
-        if: steps.anchors.outputs.enrolled == 'true' && steps.anchors.outputs.blocked == 'false'
+        if: steps.anchors.outputs.enrolled == 'true'
         run: |
           base="${{ steps.ids.outputs.base }}"
           names=$(for f in $(git ls-tree -r --name-only "$base" -- tests/gates | grep '\.gate$'); do
@@ -193,7 +123,95 @@ jobs:
           done
           exit $fail
 
-      - name: "Trust-surface change: the portable smoke set is skipped (the operator ran this head on the Spark)"
-        if: steps.anchors.outputs.blocked == 'true'
+  alpha:
+    name: AIEN Alpha
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/alpha/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      REPO_SLUG: aien-dev/aegis-runtime
+      AIEN_TEST_PIN: a51042b61b87355c0850ef82ba409a46e153a1ff
+      RECEIPTS_RAW: https://raw.githubusercontent.com/aien-dev/aien-receipts/main
+    steps:
+      - name: Checkout the tagged commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: The tagged commit must be on main
+        id: ids
         run: |
-          echo "AIEN Verification: trust-surface head, accepted on the verified operator-run bundle above."
+          sha=$(git rev-parse "${GITHUB_REF}^{commit}")
+          git fetch -q origin main
+          if ! git merge-base --is-ancestor "$sha" origin/main; then
+            echo "::error::${GITHUB_REF#refs/tags/} points at $sha, which is not on main"
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag ${GITHUB_REF#refs/tags/} -> $sha (on main)"
+
+      - name: Trust anchors from origin/main
+        run: |
+          mkdir -p "$RUNNER_TEMP/anchors"
+          if ! git show "origin/main:.aien/verify.pub" > "$RUNNER_TEMP/anchors/verify.pub" 2>/dev/null; then
+            echo "::error::.aien/verify.pub is not on origin/main: no trusted key, nothing can be verified."
+            exit 1
+          fi
+          git show "origin/main:.aien/always" > "$RUNNER_TEMP/anchors/always" 2>/dev/null || : > "$RUNNER_TEMP/anchors/always"
+          echo "verify.pub (origin/main): $(cat "$RUNNER_TEMP/anchors/verify.pub")"
+
+      - name: Install Stable Rust Toolchain (for the pinned aien-test build)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Checkout the pinned aien-test source (aien-sovereign-core @ ${{ env.AIEN_TEST_PIN }})
+        uses: actions/checkout@v4
+        with:
+          repository: aien-dev/aien-sovereign-core
+          ref: ${{ env.AIEN_TEST_PIN }}
+          path: .aien-test-src
+
+      - name: Cache the pinned aien-test build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .aien-test-src/target
+          key: aien-test-${{ runner.os }}-${{ env.AIEN_TEST_PIN }}
+
+      - name: Build aien-test from the pin (never from the tree under test), then remove the source
+        run: |
+          cargo build --release -p aien-test --manifest-path .aien-test-src/Cargo.toml
+          mkdir -p "$RUNNER_TEMP/bin" && cp .aien-test-src/target/release/aien-test "$RUNNER_TEMP/bin/aien-test"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          rm -rf .aien-test-src
+          git status --porcelain --untracked-files=normal
+
+      - name: Fetch the signed Spark bundle for the tagged commit
+        run: |
+          url="$RECEIPTS_RAW/aegis-runtime/${{ steps.ids.outputs.sha }}/bundle.json"
+          echo "bundle url: $url"
+          if ! curl -fsSL "$url" -o "$RUNNER_TEMP/bundle.json"; then
+            echo "::error::no signed Spark bundle for ${{ steps.ids.outputs.sha }} at $url"
+            exit 1
+          fi
+
+      - name: Verify the full bundle with the origin/main public key
+        run: |
+          required=$(grep -v '^#' "$RUNNER_TEMP/anchors/always" | grep -v '^$' | paste -sd, - || true)
+          set +e
+          aien-test verify-bundle "$RUNNER_TEMP/bundle.json" \
+            --repo "github.com/$REPO_SLUG" \
+            --commit "${{ steps.ids.outputs.sha }}" \
+            --pubkey "$RUNNER_TEMP/anchors/verify.pub" \
+            --require-full \
+            ${required:+--require "$required"}
+          rc=$?
+          set -e
+          echo "verify-bundle exit $rc (0 PASS, 1 FAIL, 2 NOT_RUN, 3 REJECTED)"
+          echo "::group::tag message"
+          git tag -l --format='%(contents)' "${GITHUB_REF#refs/tags/}"
+          echo "::endgroup::"
+          exit "$rc"
