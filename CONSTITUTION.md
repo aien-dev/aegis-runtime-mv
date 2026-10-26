@@ -32,8 +32,8 @@ This Constitution establishes our foundational principles, our engineering stand
 
 ### Section 3. Upstream Architectural Charter and Downstream Freedom
 1. This Constitution serves as the internal architectural charter, technical doctrine, and engineering standard for the upstream AIEN Sovereign AI Ecosystem and its core repositories.
-2. Downstream forks, independent applications, client libraries, and commercial distributions are governed strictly and exclusively by the terms of the Apache License, Version 2.0 (see [LICENSE](LICENSE)). Downstream developers possess complete freedom to innovate, customize, brand, and extend the software without obligation to adopt or enforce this internal development charter.
-3. Legal Decoupling: Legal rights, grants, and warranties reside exclusively within the formal LICENSE and NOTICE documents, and artifact licensing policies outlined in [ARTIFACT_LICENSING.md](ARTIFACT_LICENSING.md). This Constitution imposes zero behavioral covenants or philosophical constraints on downstream users, ensuring standard open-source compatibility across public package registries, corporate environments, and independent commercial deployments.
+2. Downstream forks, independent applications, client libraries, and commercial distributions are governed strictly and exclusively by the terms of the GNU Affero General Public License, Version 3 (see [LICENSE](LICENSE)). Downstream developers possess complete freedom to innovate, customize, brand, and extend the software without obligation to adopt or enforce this internal development charter.
+3. Legal Decoupling: Legal rights, grants, and warranties reside exclusively within the formal LICENSE and NOTICE documents, and artifact licensing policies outlined in [ARTIFACT_LICENSING.md](https://github.com/aien-dev/aien-sovereign-core-mv/blob/main/ARTIFACT_LICENSING.md). This Constitution imposes zero behavioral covenants or philosophical constraints on downstream users, ensuring standard open-source compatibility across public package registries, corporate environments, and independent commercial deployments.
 
 ### Section 4. The Zero-Surveillance Invariant
 Privacy and mutual trust form the basis of open cooperation.
@@ -42,12 +42,12 @@ Privacy and mutual trust form the basis of open cooperation.
 3. Leaking user data or secret keys is treated as a critical defect requiring immediate remediation.
 
 ### Section 5. The One Team Principle and Reciprocal Cooperation
-1. What we discover, we share openly. What we construct in software, we release under the Apache License, Version 2.0, providing universal operational freedom.
+1. What we discover, we share openly. What we construct in software, we release under the GNU Affero General Public License, Version 3, so that improvements stay open.
 2. Knowledge must remain accessible to the human family. We share tools freely with individuals, startups, and community builders while encouraging reciprocal weight transparency and distillation access from frontier laboratories.
 3. Upstream contributions are foundational: any public open-source project adapted to run on our stack is contributed back upstream. We never hoard fixes or improvements.
 4. Voluntary Bilateral Cooperation and Reciprocal Commons:
-Hardware manufacturers (including NVIDIA, AMD, Intel, Apple) and compute providers (such as RunPod, Lambda, and independent data centers) possess complete freedom to adopt, embed, and deploy our runtime stack under the Apache License, Version 2.0 to improve hardware efficiency, eliminate memory overhead, and expand bandwidth for developers.
-For organizations seeking deeper bilateral research cooperation, model weight transparency, distillation reciprocity, or joint compute pooling, the voluntary terms of [OPEN_COOPERATION_COVENANT.md](OPEN_COOPERATION_COVENANT.md) provide a collaborative framework.
+Hardware manufacturers (including NVIDIA, AMD, Intel, Apple) and compute providers (such as RunPod, Lambda, and independent data centers) may adopt, embed, and deploy our runtime stack under the GNU Affero General Public License, Version 3 to improve hardware efficiency, eliminate memory overhead, and expand bandwidth for developers.
+For organizations seeking deeper bilateral research cooperation, model weight transparency, distillation reciprocity, or joint compute pooling, the voluntary terms of [OPEN_COOPERATION_COVENANT.md](https://github.com/aien-dev/aien-sovereign-core-mv/blob/main/OPEN_COOPERATION_COVENANT.md) provide a collaborative framework.
 
 ### Section 6. The Contributor Oath
 Anyone contributing to our repositories, whether human operator or autonomous agent, ratifies the Developer Certificate of Origin (DCO 1.1) and the following stewardship covenant:
