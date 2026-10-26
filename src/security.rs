@@ -65,12 +65,29 @@ impl WorkspaceCapability {
                 e
             ))
         })?;
-        let root_dir = File::open(&canonical)
-            .map_err(|e| SecurityError::IoError(format!("Failed to open workspace root: {e}")))?;
-        if !root_dir.metadata().map(|m| m.is_dir()).unwrap_or(false) {
-            return Err(SecurityError::InvalidPath(
-                "Workspace root is not a directory".into(),
-            ));
+        // Walk the canonical root from / with no-follow directory opens too:
+        // canonicalize followed by File::open would race a replaced ancestor.
+        let mut root_dir = File::open("/")
+            .map_err(|e| SecurityError::IoError(format!("Failed to open filesystem root: {e}")))?;
+        for component in canonical.components() {
+            if let Component::Normal(name) = component {
+                let name = CString::new(name.as_bytes())
+                    .map_err(|_| SecurityError::InvalidPath("NUL in workspace root".into()))?;
+                let fd = unsafe {
+                    libc::openat(
+                        root_dir.as_raw_fd(),
+                        name.as_ptr(),
+                        libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                    )
+                };
+                if fd < 0 {
+                    return Err(SecurityError::AccessDenied(format!(
+                        "Unsafe workspace root: {}",
+                        std::io::Error::last_os_error()
+                    )));
+                }
+                root_dir = unsafe { File::from_raw_fd(fd) };
+            }
         }
         Ok(Self {
             root: canonical,
