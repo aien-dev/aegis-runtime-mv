@@ -82,23 +82,28 @@ jobs:
           ref: ${{ env.AIEN_TEST_PIN }}
           path: .aien-test-src
 
-      - name: Cache the pinned aien-test build
+      - name: Move the pinned source outside the candidate Cargo configuration
+        if: steps.anchors.outputs.enrolled == 'true'
+        run: mv .aien-test-src "$RUNNER_TEMP/aien-test-src"
+
+      # Cache dependencies only, never verifier executables or candidate-controlled target output.
+      - name: Cache the pinned aien-test dependencies
         uses: actions/cache@v4
         if: steps.anchors.outputs.enrolled == 'true'
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            .aien-test-src/target
-          key: aien-test-${{ runner.os }}-${{ env.AIEN_TEST_PIN }}
+          key: aien-test-isolated-v1-${{ runner.os }}-${{ env.AIEN_TEST_PIN }}
 
-      - name: Build aien-test from the pin (never from the tree under test), then remove the source
+      - name: Build aien-test outside the tree under test
         if: steps.anchors.outputs.enrolled == 'true'
         run: |
-          cargo build --release -p aien-test --manifest-path .aien-test-src/Cargo.toml
-          mkdir -p "$RUNNER_TEMP/bin" && cp .aien-test-src/target/release/aien-test "$RUNNER_TEMP/bin/aien-test"
+          cd "$RUNNER_TEMP/aien-test-src"
+          cargo build --release -p aien-test --target-dir "$RUNNER_TEMP/aien-test-target"
+          mkdir -p "$RUNNER_TEMP/bin" && cp "$RUNNER_TEMP/aien-test-target/release/aien-test" "$RUNNER_TEMP/bin/aien-test"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-          rm -rf .aien-test-src
+          cd "$GITHUB_WORKSPACE"
           git status --porcelain --untracked-files=normal
 
       - name: Portable smoke set (gates whose requires is only portable, named at the base ref)
@@ -172,21 +177,25 @@ jobs:
           ref: ${{ env.AIEN_TEST_PIN }}
           path: .aien-test-src
 
-      - name: Cache the pinned aien-test build
+      - name: Move the pinned source outside the candidate Cargo configuration
+        run: mv .aien-test-src "$RUNNER_TEMP/aien-test-src"
+
+      # Cache dependencies only, never verifier executables or candidate-controlled target output.
+      - name: Cache the pinned aien-test dependencies
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            .aien-test-src/target
-          key: aien-test-${{ runner.os }}-${{ env.AIEN_TEST_PIN }}
+          key: aien-test-isolated-v1-${{ runner.os }}-${{ env.AIEN_TEST_PIN }}
 
-      - name: Build aien-test from the pin (never from the tree under test), then remove the source
+      - name: Build aien-test outside the tree under test
         run: |
-          cargo build --release -p aien-test --manifest-path .aien-test-src/Cargo.toml
-          mkdir -p "$RUNNER_TEMP/bin" && cp .aien-test-src/target/release/aien-test "$RUNNER_TEMP/bin/aien-test"
+          cd "$RUNNER_TEMP/aien-test-src"
+          cargo build --release -p aien-test --target-dir "$RUNNER_TEMP/aien-test-target"
+          mkdir -p "$RUNNER_TEMP/bin" && cp "$RUNNER_TEMP/aien-test-target/release/aien-test" "$RUNNER_TEMP/bin/aien-test"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-          rm -rf .aien-test-src
+          cd "$GITHUB_WORKSPACE"
           git status --porcelain --untracked-files=normal
 
       - name: Fetch the signed Spark bundle for the tagged commit

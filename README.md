@@ -97,6 +97,7 @@ Security defaults:
 - The gateway listens on 127.0.0.1 only. Any other address needs `--bind <ip> --allow-non-loopback-bind`.
 - Every route except a few read-only `GET` routes (`/health`, `/api/v1/health`, `/v1/models`, `/api/v1/skills`, `/api/v1/events`, `/events`) needs the operator token, sent as `Authorization: Bearer <token>` or `X-Aegis-Operator-Token: <token>`. This covers `/api/v1/shell`, `/api/v1/skills/execute`, the task list (`GET /api/v1/tasks`, whose records carry command text and output), every other `POST`, and the WebSocket. With no token configured those routes refuse every request. The token can also come from `--operator-token-file <path>`.
 - Skills and shell commands run only from an allowlist: the registered skill names, and for shell exactly `git status`, `git diff`, `git log -1 --oneline`, `ls`.
+- `write_file` opens each directory and the leaf relative to a held workspace directory descriptor. Symlinks and multiply linked or non-regular target files are refused; nested directories are created inside that descriptor tree. This containment applies to `write_file`, not to arbitrary shell commands.
 - Probe gating runs on every skill and shell call. `AIEN_PROBE_ENFORCE` takes a number above 0.5 and up to 1.0 and can only raise the threshold; any other value keeps the default of 0.5, so it cannot turn gating off.
 
 ### CLI commands
