@@ -19,6 +19,7 @@ dependencies = [
  "chrono",
  "clap",
  "futures-util",
+ "libc",
  "parking_lot",
  "reqwest",
  "rusqlite",
