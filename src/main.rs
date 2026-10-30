@@ -248,7 +248,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::MigrateLegacyTasks { db_path, quiescent } => {
             let migrated = Database::migrate_legacy_running_tasks(Path::new(&db_path), quiescent)?;
-            println!("Migrated {} legacy running tasks to failed: abandoned: outcome unknown", migrated);
+            println!(
+                "Migrated {} legacy running tasks to failed: abandoned: outcome unknown",
+                migrated
+            );
         }
         Commands::Tick { db_path } => {
             info!("Executing single autonomous heartbeat tick...");

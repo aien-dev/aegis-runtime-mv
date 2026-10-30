@@ -63,15 +63,20 @@ pub fn terminal_tool_failure(steps: &[AgentStep]) -> Option<ToolFault> {
         return Some(ToolFault::new(
             failure.class,
             failure.effect_certainty,
-            failure.cause.first().map(|cause| cause.message.as_str())
+            failure
+                .cause
+                .first()
+                .map(|cause| cause.message.as_str())
                 .unwrap_or("agent tool call failed"),
         ));
     }
-    calls().any(|call| !call.success).then(|| ToolFault::new(
-        FailureClass::Failed,
-        EffectCertainty::Uncertain,
-        "agent tool call failed without a failure record",
-    ))
+    calls().any(|call| !call.success).then(|| {
+        ToolFault::new(
+            FailureClass::Failed,
+            EffectCertainty::Uncertain,
+            "agent tool call failed without a failure record",
+        )
+    })
 }
 
 #[derive(Clone)]
@@ -411,8 +416,8 @@ impl AgentEngine {
                 }
             } else {
                 let content = turn_res.content.unwrap_or_default();
-                let terminal_text = !content.trim().is_empty()
-                    && turn_res.finish_reason.as_deref() == Some("stop");
+                let terminal_text =
+                    !content.trim().is_empty() && turn_res.finish_reason.as_deref() == Some("stop");
                 final_response = if content.trim().is_empty() {
                     "Inference ended without terminal text.".to_string()
                 } else {

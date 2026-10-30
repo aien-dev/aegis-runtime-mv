@@ -1,7 +1,7 @@
 use chrono::Utc;
 use futures_util::FutureExt;
-use std::panic::AssertUnwindSafe;
 use serde::{Deserialize, Serialize};
+use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -117,7 +117,10 @@ impl HeartbeatEngine {
         degraded |= match self.db.retry_task_outcomes() {
             Ok(summary) => summary.failed != 0,
             Err(error) => {
-                warn!("Heartbeat retained finalization or transcript export for retry: {}", error);
+                warn!(
+                    "Heartbeat retained finalization or transcript export for retry: {}",
+                    error
+                );
                 true
             }
         };
@@ -156,13 +159,17 @@ impl HeartbeatEngine {
                             if let Some(ref inf) = self.inference {
                                 inf.check_health().await
                             } else {
-                                http_model_health("http://127.0.0.1:18006/v1/models").await.unwrap_or(false)
+                                http_model_health("http://127.0.0.1:18006/v1/models")
+                                    .await
+                                    .unwrap_or(false)
                             }
                         };
                         let is_healthy = tokio::time::timeout(HEALTH_ACTION_TIMEOUT, health)
                             .await
-                            .map_err(|_| "Model health deadline exceeded: outcome unknown".to_string())?;
-    
+                            .map_err(|_| {
+                                "Model health deadline exceeded: outcome unknown".to_string()
+                            })?;
+
                         if is_healthy {
                             Ok("Local model seat verified ACTIVE on port 18006".to_string())
                         } else {
@@ -175,7 +182,7 @@ impl HeartbeatEngine {
                         } else {
                             &task.payload
                         };
-    
+
                         match self
                             .workspace
                             .dispatch_shell_gated(cmd_to_run, None, 15)
@@ -200,7 +207,9 @@ impl HeartbeatEngine {
                     _ => Err(format!("Unknown task type: {}", task.task_type)),
                 }
             };
-            let outcome = AssertUnwindSafe(action).catch_unwind().await
+            let outcome = AssertUnwindSafe(action)
+                .catch_unwind()
+                .await
                 .unwrap_or_else(|_| Err("Task action panicked: outcome unknown".into()));
 
             degraded |= outcome.is_err();
@@ -210,7 +219,10 @@ impl HeartbeatEngine {
         degraded |= match self.db.retry_task_outcomes() {
             Ok(summary) => summary.failed != 0,
             Err(error) => {
-                warn!("Heartbeat retained finalization or transcript export for retry: {}", error);
+                warn!(
+                    "Heartbeat retained finalization or transcript export for retry: {}",
+                    error
+                );
                 true
             }
         };
@@ -229,7 +241,9 @@ impl HeartbeatEngine {
 
         if let Err(error) = self.db.record_heartbeat_tick(&mut receipt) {
             receipt.status = "degraded";
-            receipt.notes.push_str(&format!("; receipt persistence failed: {}", error));
+            receipt
+                .notes
+                .push_str(&format!("; receipt persistence failed: {}", error));
         }
         let _ = self.tx_pulse.send(receipt.clone());
 
@@ -304,13 +318,50 @@ mod tests {
     struct HealthyProbe;
     #[async_trait::async_trait]
     impl InferenceEngine for HealthyProbe {
-        fn model_id(&self)->String { "test-health".into() }
-        fn endpoint(&self)->String { "test-only".into() }
-        async fn generate_with_tokens(&self,_:&str,_:Option<&str>,_:Option<f32>,_:Option<u32>)->Result<String,Box<dyn std::error::Error+Send+Sync>> { unreachable!() }
-        async fn generate_chat(&self,_:&[Value],_:Option<f32>,_:Option<u32>)->Result<String,Box<dyn std::error::Error+Send+Sync>> { unreachable!() }
-        async fn generate_chat_with_tools(&self,_:&[Value],_:Option<&[Value]>,_:Option<f32>,_:Option<u32>)->Result<ChatTurnResponse,Box<dyn std::error::Error+Send+Sync>> { unreachable!() }
-        async fn stream_chat(&self,_:&[Value],_:Option<f32>,_:Option<u32>)->Result<ChatStream,Box<dyn std::error::Error+Send+Sync>> { unreachable!() }
-        async fn check_health(&self)->bool { tokio::task::yield_now().await; true }
+        fn model_id(&self) -> String {
+            "test-health".into()
+        }
+        fn endpoint(&self) -> String {
+            "test-only".into()
+        }
+        async fn generate_with_tokens(
+            &self,
+            _: &str,
+            _: Option<&str>,
+            _: Option<f32>,
+            _: Option<u32>,
+        ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+            unreachable!()
+        }
+        async fn generate_chat(
+            &self,
+            _: &[Value],
+            _: Option<f32>,
+            _: Option<u32>,
+        ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+            unreachable!()
+        }
+        async fn generate_chat_with_tools(
+            &self,
+            _: &[Value],
+            _: Option<&[Value]>,
+            _: Option<f32>,
+            _: Option<u32>,
+        ) -> Result<ChatTurnResponse, Box<dyn std::error::Error + Send + Sync>> {
+            unreachable!()
+        }
+        async fn stream_chat(
+            &self,
+            _: &[Value],
+            _: Option<f32>,
+            _: Option<u32>,
+        ) -> Result<ChatStream, Box<dyn std::error::Error + Send + Sync>> {
+            unreachable!()
+        }
+        async fn check_health(&self) -> bool {
+            tokio::task::yield_now().await;
+            true
+        }
     }
 
     #[tokio::test]
@@ -329,13 +380,18 @@ mod tests {
             drop(socket);
         });
         let client = tokio::spawn(async move { http_model_health(&endpoint).await });
-        tokio::time::timeout(Duration::from_secs(2), accepted.notified()).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(2), accepted.notified())
+            .await
+            .unwrap();
         tokio::time::pause();
         tokio::time::advance(HEALTH_ACTION_TIMEOUT).await;
         tokio::time::resume();
         let result = tokio::time::timeout(Duration::from_secs(2), client).await;
         server.abort();
-        let error = result.expect("HTTP client must have its own request deadline").unwrap().unwrap_err();
+        let error = result
+            .expect("HTTP client must have its own request deadline")
+            .unwrap()
+            .unwrap_err();
         assert!(error.is_timeout());
     }
 

@@ -168,7 +168,11 @@ impl Database {
         let mut summary = TaskFlushSummary::default();
         pending.retain(|outcome| match self.commit_terminal(outcome) {
             Ok(()) => {
-                if outcome.success { summary.completed += 1; } else { summary.failed += 1; }
+                if outcome.success {
+                    summary.completed += 1;
+                } else {
+                    summary.failed += 1;
+                }
                 false
             }
             Err(error) => {
@@ -205,7 +209,11 @@ impl Database {
     }
 
     fn write_terminal(tx: &rusqlite::Transaction<'_>, outcome: &TerminalOutcome) -> DbResult<()> {
-        let status = if outcome.success { "completed" } else { "failed" };
+        let status = if outcome.success {
+            "completed"
+        } else {
+            "failed"
+        };
         let changed = tx.execute(
             "UPDATE tasks SET status=?1, result=?2, completed_at=?3 WHERE id=?4 AND status='running' AND claim_id=?5 AND owner_id=?6",
             params![
@@ -218,9 +226,15 @@ impl Database {
             ],
         )?;
         if changed != 1 {
-            return Err(refused("task finalization refused: stale claim or terminal task"));
+            return Err(refused(
+                "task finalization refused: stale claim or terminal task",
+            ));
         }
-        let event_type = if outcome.success { "task_completed" } else { "task_failed" };
+        let event_type = if outcome.success {
+            "task_completed"
+        } else {
+            "task_failed"
+        };
         let data = if outcome.success {
             serde_json::json!({
                 "id": outcome.claim.id,
@@ -259,9 +273,12 @@ impl Database {
                 |row| row.get(0),
             )?;
             if unknown != 0 {
-                return Err(refused("ownerless running tasks require a quiescent migration; outcomes unknown"));
+                return Err(refused(
+                    "ownerless running tasks require a quiescent migration; outcomes unknown",
+                ));
             }
-            let mut stmt = conn.prepare("SELECT id,claim_id,owner_id FROM tasks WHERE status='running'")?;
+            let mut stmt =
+                conn.prepare("SELECT id,claim_id,owner_id FROM tasks WHERE status='running'")?;
             let rows = stmt.query_map([], |row| {
                 Ok(TaskClaim {
                     id: row.get(0)?,
@@ -277,7 +294,8 @@ impl Database {
                 if claim.owner == self.owner.id {
                     continue;
                 }
-                Uuid::parse_str(&claim.owner).map_err(|_| refused("invalid task owner identity"))?;
+                Uuid::parse_str(&claim.owner)
+                    .map_err(|_| refused("invalid task owner identity"))?;
                 let _dead_owner = match lock_file(&directory.join(&claim.owner), true) {
                     Ok(lock) => lock,
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => continue,
@@ -305,10 +323,15 @@ impl Database {
     /// `quiescent` acknowledges that pre-claim binaries cannot be detected with owner locks.
     pub fn migrate_legacy_running_tasks(path: &Path, quiescent: bool) -> DbResult<usize> {
         if !quiescent {
-            return Err(refused("legacy migration requires --quiescent after stopping all task writers"));
+            return Err(refused(
+                "legacy migration requires --quiescent after stopping all task writers",
+            ));
         }
         // A mistyped path must not create a new database and appear to migrate successfully.
-        let conn = rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        let conn = rusqlite::Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
+        )?;
         let db = Self {
             conn: Arc::new(Mutex::new(conn)),
             transcript_path: path.parent().map(|parent| parent.join("transcript.jsonl")),
@@ -318,13 +341,19 @@ impl Database {
         for entry in std::fs::read_dir(db.owner.directory.as_ref().unwrap()).map_err(io_error)? {
             let entry = entry.map_err(io_error)?;
             let name = entry.file_name();
-            let name = name.to_str().ok_or_else(|| refused("invalid task owner identity"))?;
+            let name = name
+                .to_str()
+                .ok_or_else(|| refused("invalid task owner identity"))?;
             Uuid::parse_str(name).map_err(|_| refused("invalid task owner identity"))?;
-            if name == db.owner.id { continue; }
+            if name == db.owner.id {
+                continue;
+            }
             match lock_file(&entry.path(), true) {
                 Ok(lock) => owner_locks.push(lock),
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    return Err(refused("legacy migration refused: live task owner; stop all task writers"));
+                    return Err(refused(
+                        "legacy migration refused: live task owner; stop all task writers",
+                    ));
                 }
                 Err(error) => return Err(io_error(error)),
             }
@@ -339,13 +368,22 @@ impl Database {
                 rows.collect::<DbResult<Vec<_>>>()?
             };
             for id in &ids {
-                let claim = TaskClaim { id: id.clone(), token: Uuid::new_v4().to_string(), owner: db.owner.id.clone() };
+                let claim = TaskClaim {
+                    id: id.clone(),
+                    token: Uuid::new_v4().to_string(),
+                    owner: db.owner.id.clone(),
+                };
                 let changed = tx.execute(
                     "UPDATE tasks SET claim_id=?2,owner_id=?3 WHERE id=?1 AND status='running' AND (owner_id IS NULL OR claim_id IS NULL)",
                     params![claim.id, claim.token, claim.owner],
                 )?;
-                if changed != 1 { return Err(refused("legacy migration refused: task changed")); }
-                Self::write_terminal(&tx, &TerminalOutcome::new(claim, Err("abandoned: outcome unknown".into())))?;
+                if changed != 1 {
+                    return Err(refused("legacy migration refused: task changed"));
+                }
+                Self::write_terminal(
+                    &tx,
+                    &TerminalOutcome::new(claim, Err("abandoned: outcome unknown".into())),
+                )?;
             }
             tx.commit()?;
             ids.len()
@@ -361,7 +399,9 @@ impl Database {
             return Ok(());
         };
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT event_id,event_json FROM task_terminal_events WHERE exported=0 ORDER BY rowid")?;
+        let mut stmt = conn.prepare(
+            "SELECT event_id,event_json FROM task_terminal_events WHERE exported=0 ORDER BY rowid",
+        )?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
@@ -380,20 +420,31 @@ impl Database {
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes).map_err(io_error)?;
         // Discard only an interrupted trailing append; committed complete records are immutable.
-        let end = bytes.iter().rposition(|b| *b == b'\n').map_or(0, |pos| pos + 1);
+        let end = bytes
+            .iter()
+            .rposition(|b| *b == b'\n')
+            .map_or(0, |pos| pos + 1);
         file.set_len(end as u64).map_err(io_error)?;
         file.seek(SeekFrom::End(0)).map_err(io_error)?;
         let seen: HashSet<String> = bytes[..end]
             .split(|b| *b == b'\n')
             .filter_map(|line| serde_json::from_slice::<serde_json::Value>(line).ok())
-            .filter_map(|event| event.get("event_id").and_then(|id| id.as_str()).map(str::to_owned))
+            .filter_map(|event| {
+                event
+                    .get("event_id")
+                    .and_then(|id| id.as_str())
+                    .map(str::to_owned)
+            })
             .collect();
         for (id, json) in events {
             if !seen.contains(&id) {
                 writeln!(file, "{json}").map_err(io_error)?;
                 file.sync_all().map_err(io_error)?;
             }
-            conn.execute("UPDATE task_terminal_events SET exported=1 WHERE event_id=?1", params![id])?;
+            conn.execute(
+                "UPDATE task_terminal_events SET exported=1 WHERE event_id=?1",
+                params![id],
+            )?;
         }
         Ok(())
     }
