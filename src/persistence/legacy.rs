@@ -9,8 +9,8 @@ use tracing::info;
 
 use super::async_db::AsyncDatabase;
 use super::sqlite::schema::initialize_schema;
-use crate::heartbeat::PulseReceipt;
 use super::task_lifecycle::{lock_file, TaskOwner};
+use crate::heartbeat::PulseReceipt;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TaskRecord {
@@ -162,7 +162,9 @@ impl Database {
         )?;
         if let Err(error) = self.record_transcript("heartbeat_tick", receipt) {
             receipt.status = "degraded";
-            receipt.notes.push_str(&format!("; receipt projection failed: {}", error));
+            receipt
+                .notes
+                .push_str(&format!("; receipt projection failed: {}", error));
             tracing::warn!("Heartbeat transcript projection failed: {}", error);
             tx.execute(
                 "UPDATE heartbeats SET status=?2,notes=?3 WHERE tick_id=?1",
@@ -222,7 +224,6 @@ impl Database {
         Ok(tasks)
     }
 
-
     pub fn store_crumb(
         &self,
         key: &str,
@@ -274,7 +275,11 @@ impl Database {
         Ok(crumbs)
     }
 
-    pub fn record_transcript<T: Serialize>(&self, event_type: &str, data: &T) -> Result<(), rusqlite::Error> {
+    pub fn record_transcript<T: Serialize>(
+        &self,
+        event_type: &str,
+        data: &T,
+    ) -> Result<(), rusqlite::Error> {
         if let Some(path) = &self.transcript_path {
             let event = serde_json::json!({
                 "timestamp": Utc::now().to_rfc3339(),

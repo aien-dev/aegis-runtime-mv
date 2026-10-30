@@ -7,7 +7,7 @@ mod task_lifecycle;
 pub use async_db::AsyncDatabase;
 pub use error::PersistenceError;
 pub use legacy::{CrumbRecord, Database, TaskRecord, TurnRecord};
-pub use task_lifecycle::TaskClaim;
 pub use sqlite::{
     SqliteActionStore, SqliteApprovalStore, SqliteMessageStore, SqliteRunStore, SqliteSessionStore,
 };
+pub use task_lifecycle::TaskClaim;
