@@ -188,7 +188,7 @@ mod tests {
         assert!(resolve_bind_addr("::1", 1, false).is_ok());
         assert!(resolve_bind_addr("0.0.0.0", 1, false).is_err());
         assert!(resolve_bind_addr("::", 1, false).is_err());
-        assert!(resolve_bind_addr("192.168.1.10", 1, false).is_err());
+        assert!(resolve_bind_addr("192.0.2.10", 1, false).is_err());
         assert!(resolve_bind_addr("localhost", 1, false).is_err());
         assert!(resolve_bind_addr("0.0.0.0", 1, true).is_ok());
     }
