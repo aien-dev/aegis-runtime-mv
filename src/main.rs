@@ -47,6 +47,14 @@ enum Commands {
         #[arg(long, default_value = "60")]
         heartbeat_secs: u64,
     },
+    /// Fail unknown legacy running tasks without executing them. Stop every database writer first.
+    MigrateLegacyTasks {
+        #[arg(long, default_value = "aegis.sqlite")]
+        db_path: String,
+        /// Acknowledge all task writers, including old binaries, are stopped.
+        #[arg(long)]
+        quiescent: bool,
+    },
     /// Run a single heartbeat tick immediately
     Tick {
         #[arg(long, default_value = "aegis.sqlite")]
@@ -169,9 +177,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .finish();
     tracing::subscriber::set_global_default(subscriber).ok();
 
-    migrate_legacy_db_if_needed();
-
     let cli = Cli::parse();
+    if !matches!(&cli.command, Some(Commands::MigrateLegacyTasks { .. })) {
+        migrate_legacy_db_if_needed();
+    }
 
     match cli.command.unwrap_or(Commands::Serve {
         port: 18096,
@@ -236,6 +245,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             info!("Starting Axum sub-millisecond gateway on {}", addr);
             start_gateway(state, addr).await?;
+        }
+        Commands::MigrateLegacyTasks { db_path, quiescent } => {
+            let migrated = Database::migrate_legacy_running_tasks(Path::new(&db_path), quiescent)?;
+            println!("Migrated {} legacy running tasks to failed: abandoned: outcome unknown", migrated);
         }
         Commands::Tick { db_path } => {
             info!("Executing single autonomous heartbeat tick...");
