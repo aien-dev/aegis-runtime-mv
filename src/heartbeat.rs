@@ -1,4 +1,6 @@
 use chrono::Utc;
+use futures_util::FutureExt;
+use std::panic::AssertUnwindSafe;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -95,7 +97,7 @@ impl HeartbeatEngine {
         let tick = self.tick_counter.fetch_add(1, Ordering::SeqCst) + 1;
         let now = Utc::now().to_rfc3339();
 
-        let mut degraded = false;
+        let mut degraded = self.db.retry_task_outcomes().is_err();
         let pending_tasks = match self.db.list_pending_tasks() {
             Ok(tasks) => tasks,
             Err(e) => {
@@ -112,86 +114,82 @@ impl HeartbeatEngine {
 
         for task in pending_tasks {
             // Another pulse may have taken this task since the list was read.
-            match self.db.claim_task(&task.id) {
-                Ok(true) => {}
-                Ok(false) => continue,
+            let claim = match self.db.claim_task(&task.id) {
+                Ok(Some(claim)) => claim,
+                Ok(None) => continue,
                 Err(e) => {
                     degraded = true;
                     warn!("Heartbeat could not claim task {}: {}", task.id, e);
                     continue;
                 }
-            }
+            };
+            let execution = self.db.hold_claim(claim);
 
-            let outcome = match task.task_type.as_str() {
-                // "max_health" is the former name, kept so tasks already queued under it still run.
-                "model_health" | "max_health" => {
-                    let is_healthy = if let Some(ref inf) = self.inference {
-                        inf.check_health().await
-                    } else {
-                        reqwest::Client::new()
-                            .get("http://127.0.0.1:18006/v1/models")
-                            .send()
+            let action = async {
+                match task.task_type.as_str() {
+                    // "max_health" is the former name, kept so tasks already queued under it still run.
+                    "model_health" | "max_health" => {
+                        let is_healthy = if let Some(ref inf) = self.inference {
+                            inf.check_health().await
+                        } else {
+                            reqwest::Client::new()
+                                .get("http://127.0.0.1:18006/v1/models")
+                                .send()
+                                .await
+                                .map(|r| r.status().is_success())
+                                .unwrap_or(false)
+                        };
+    
+                        if is_healthy {
+                            Ok("Local model seat verified ACTIVE on port 18006".to_string())
+                        } else {
+                            Err("Local model seat unreachable or offline on port 18006".to_string())
+                        }
+                    }
+                    "build_monitor" | "shell_exec" => {
+                        let cmd_to_run = if task.payload.is_empty() {
+                            "echo 'empty build task'"
+                        } else {
+                            &task.payload
+                        };
+    
+                        match self
+                            .workspace
+                            .dispatch_shell_gated(cmd_to_run, None, 15)
                             .await
-                            .map(|r| r.status().is_success())
-                            .unwrap_or(false)
-                    };
-
-                    if is_healthy {
-                        Ok("Local model seat verified ACTIVE on port 18006".to_string())
-                    } else {
-                        Err("Local model seat unreachable or offline on port 18006".to_string())
+                        {
+                            Ok(stdout) => Ok(format!("Exit code 0: {}", stdout.trim())),
+                            Err(e) => Err(format!("Execution failure: {}", e)),
+                        }
                     }
-                }
-                "build_monitor" | "shell_exec" => {
-                    let cmd_to_run = if task.payload.is_empty() {
-                        "echo 'empty build task'"
-                    } else {
-                        &task.payload
-                    };
-
-                    match self
-                        .workspace
-                        .dispatch_shell_gated(cmd_to_run, None, 15)
-                        .await
-                    {
-                        Ok(stdout) => Ok(format!("Exit code 0: {}", stdout.trim())),
-                        Err(e) => Err(format!("Execution failure: {}", e)),
+                    "consolidate_memory" => {
+                        let crumb_key = format!("consolidation_tick_{}", tick);
+                        self.db
+                            .store_crumb(
+                                &crumb_key,
+                                "Episodic memory consolidated into WAL",
+                                "heartbeat",
+                            )
+                            .map(|()| "Memory crumbs recorded".to_string())
+                            .map_err(|e| format!("Memory consolidation failure: {}", e))
                     }
+                    "system_telemetry" => Ok("System telemetry nominal: GB10 aarch64".to_string()),
+                    _ => Err(format!("Unknown task type: {}", task.task_type)),
                 }
-                "consolidate_memory" => {
-                    let crumb_key = format!("consolidation_tick_{}", tick);
-                    self.db
-                        .store_crumb(
-                            &crumb_key,
-                            "Episodic memory consolidated into WAL",
-                            "heartbeat",
-                        )
-                        .map(|()| "Memory crumbs recorded".to_string())
-                        .map_err(|e| format!("Memory consolidation failure: {}", e))
-                }
-                "system_telemetry" => Ok("System telemetry nominal: GB10 aarch64".to_string()),
-                _ => Err(format!("Unknown task type: {}", task.task_type)),
             };
+            let outcome = AssertUnwindSafe(action).catch_unwind().await
+                .unwrap_or_else(|_| Err("Task action panicked: outcome unknown".into()));
 
-            let failure = match outcome {
-                Ok(result) => self
-                    .db
-                    .complete_task(&task.id, &result)
-                    .err()
-                    .map(|e| format!("Could not record task completion: {}", e)),
-                Err(error) => Some(error),
-            };
-            if let Some(error) = failure {
-                degraded = true;
-                warn!("Heartbeat task {} failed: {}", task.id, error);
-                if let Err(e) = self.db.fail_task(&task.id, &error) {
-                    warn!("Heartbeat could not record failure of task {}: {}", task.id, e);
-                }
-            }
+            degraded |= outcome.is_err();
+            execution.finish(outcome);
             actions += 1;
         }
+        if let Err(error) = self.db.retry_task_outcomes() {
+            degraded = true;
+            warn!("Heartbeat retained finalization or transcript export for retry: {}", error);
+        }
 
-        let receipt = PulseReceipt {
+        let mut receipt = PulseReceipt {
             tick_id: tick,
             timestamp: now,
             status: if degraded { "degraded" } else { "nominal" },
@@ -203,7 +201,10 @@ impl HeartbeatEngine {
             ),
         };
 
-        let _ = self.db.record_heartbeat_tick(&receipt);
+        if let Err(error) = self.db.record_heartbeat_tick(&receipt) {
+            receipt.status = "degraded";
+            receipt.notes.push_str(&format!("; receipt persistence failed: {}", error));
+        }
         let _ = self.tx_pulse.send(receipt.clone());
 
         // Record operational pulse event to the Crumb ledger (.crumb)
