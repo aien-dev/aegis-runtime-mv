@@ -1013,36 +1013,12 @@ fn scrub_message(message: &str) -> String {
 /// This is the whole adapter seam: the agent already gates every tool call,
 /// so the DAG adds no authority here.
 pub fn agent_outcome(result: &crate::agent::AgentExecutionResult) -> TaskOutcome {
-    let last_failure = result
-        .steps
-        .iter()
-        .flat_map(|s| s.tool_calls.iter())
-        .filter_map(|c| c.failure.as_ref())
-        .next_back();
-    if let Some(f) = last_failure {
-        if f.class == FailureClass::ApprovalPending {
-            return TaskOutcome::ApprovalPending;
-        }
-        let msg = f
-            .cause
-            .first()
-            .map(|c| c.message.clone())
-            .unwrap_or_else(|| "agent tool call failed".into());
-        return TaskOutcome::Failed(ToolFault::new(f.class, f.effect_certainty, msg));
-    }
-    // Deny by default: a failed call with no provenance record (older
-    // records) is still a failure, and its effect is unknown.
-    let unrecorded_failure = result
-        .steps
-        .iter()
-        .flat_map(|s| s.tool_calls.iter())
-        .any(|c| !c.success);
-    if unrecorded_failure {
-        return TaskOutcome::Failed(ToolFault::new(
-            FailureClass::Failed,
-            EffectCertainty::Uncertain,
-            "agent tool call failed without a failure record",
-        ));
+    if let Some(fault) = crate::agent::terminal_tool_failure(&result.steps) {
+        return if fault.class == FailureClass::ApprovalPending {
+            TaskOutcome::ApprovalPending
+        } else {
+            TaskOutcome::Failed(fault)
+        };
     }
     if result.completed {
         TaskOutcome::Completed(serde_json::json!({ "final_response": result.final_response }))

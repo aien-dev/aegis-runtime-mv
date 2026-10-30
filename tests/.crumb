@@ -10,25 +10,6 @@
     }
   ],
   "extensions": {
-    "generated": {
-      "children": [
-        {
-          "digest": "11d0225fbcf4401c0ac8144b7ad1b22ff1454eba75d5ff915f0a14de6fd40473",
-          "last_commit": "3c36f78",
-          "name": "fixtures",
-          "purpose": "Directory tests/fixtures. Purpose not yet described by a human."
-        }
-      ],
-      "children_root": "sha256:2f0b999b8999ad3095c8081fb342d506f27f7b07b31452b67140d330ccf4dc76",
-      "compiled_at": "2026-10-16T19:39:56Z",
-      "compiler": "crumb-compile/1",
-      "digest": "sha256:0567651a816f21fbccdf90ad6cc4759216536fafa28891684d219ce727df5d5a",
-      "evidence_files": 0,
-      "evidence_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "files": 20,
-      "generated_at_commit": "f80cac5a1bc2132b8bf2f31bd47ecc8c05f7455f",
-      "source_tree": "sha256:70f5232fcb056878b432b99833a48575ebc6868c7b46248892f6fe95f43d6b4e"
-    },
     "owner_lane": "",
     "seed": {
       "files": [

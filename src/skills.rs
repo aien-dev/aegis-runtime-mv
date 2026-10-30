@@ -265,14 +265,13 @@ impl SkillRegistry {
             let path_str = args.get("path").and_then(|p| p.as_str()).unwrap_or("");
             let content = args.get("content").and_then(|c| c.as_str()).unwrap_or("");
             let resolved = ws_write
-                .resolve_write_path(path_str)
+                .write_file(path_str, content)
                 .map_err(|e| e.to_string())?;
-            if let Some(parent) = resolved.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            std::fs::write(&resolved, content)
-                .map(|_| format!("Wrote {} bytes to {}", content.len(), resolved.display()))
-                .map_err(|e| format!("Failed to write file {}: {}", resolved.display(), e))
+            Ok(format!(
+                "Wrote {} bytes to {}",
+                content.len(),
+                resolved.display()
+            ))
         });
 
         // Builtin 4: list_dir
@@ -489,5 +488,39 @@ mod tests {
         let escape_res = registry.execute(&escape_req);
         assert!(!escape_res.success);
         assert!(escape_res.error.unwrap().contains("Security rejection"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn write_file_refuses_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let workspace = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let victim = outside.path().join("victim");
+        std::fs::write(&victim, "original").unwrap();
+        symlink(&victim, workspace.path().join("leaf")).unwrap();
+        symlink(outside.path(), workspace.path().join("parent")).unwrap();
+        let registry =
+            SkillRegistry::with_workspace(WorkspaceCapability::new(workspace.path()).unwrap());
+        for path in ["leaf", "parent/victim", "parent/new", "../outside"] {
+            let result = registry.execute(&SkillExecutionRequest {
+                skill_name: "write_file".into(),
+                arguments: serde_json::json!({"path": path, "content": "overwritten"}),
+            });
+            assert!(!result.success, "unexpectedly wrote {path}");
+        }
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "original");
+        assert!(!outside.path().join("new").exists());
+
+        let result = registry.execute(&SkillExecutionRequest {
+            skill_name: "write_file".into(),
+            arguments: serde_json::json!({"path": "nested/ok", "content": "allowed"}),
+        });
+        assert!(result.success, "{:?}", result.error);
+        assert_eq!(
+            std::fs::read_to_string(workspace.path().join("nested/ok")).unwrap(),
+            "allowed"
+        );
     }
 }

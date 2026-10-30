@@ -1128,3 +1128,292 @@ async fn test_gateway_probe_endpoint() {
     assert_eq!(body["model"], "aien-sovereign-gb10");
     assert!(body["answers"].as_array().is_some());
 }
+
+#[tokio::test]
+async fn completion_truth_http_turn_exhaustion_is_incomplete() {
+    let app = create_router(create_test_state().await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/agent/run")
+                .header("Authorization", auth_header())
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"prompt":"no turn budget","max_turns":0}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body["completed"], false);
+    assert!(body["final_response"]
+        .as_str()
+        .unwrap()
+        .contains("maximum turn limit (0)"));
+    assert_eq!(body["status"], "incomplete");
+}
+
+#[tokio::test]
+async fn completion_truth_ws_turn_exhaustion_is_incomplete() {
+    let app = create_router(create_test_state().await);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let (mut ws, _) =
+        tokio_tungstenite::connect_async(authed_ws_request(&format!("ws://{addr}/ws")))
+            .await
+            .unwrap();
+    ws.send(tokio_tungstenite::tungstenite::Message::Text(
+        r#"{"type":"agent_run","prompt":"no turn budget","max_turns":0}"#.into(),
+    ))
+    .await
+    .unwrap();
+    let body: Value = loop {
+        let message = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        if let Ok(text) = message.to_text() {
+            let body: Value = serde_json::from_str(text).unwrap();
+            if body["type"] == "agent_result" {
+                break body;
+            }
+        }
+    };
+    ws.close(None).await.unwrap();
+    server.abort();
+    assert_eq!(body["result"]["completed"], false);
+    assert!(body["result"]["final_response"]
+        .as_str()
+        .unwrap()
+        .contains("maximum turn limit (0)"));
+    assert_eq!(body["status"], "incomplete");
+}
+
+async fn assert_heartbeat_completion_truth(
+    task_type: &str,
+    payload: &str,
+    reject_crumb: bool,
+    successful: bool,
+    expected_result: &str,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("aegis.sqlite");
+    let db = Arc::new(Database::open(&path).unwrap());
+    let observer = rusqlite::Connection::open(&path).unwrap();
+    if reject_crumb {
+        observer
+            .execute_batch(
+                "CREATE TRIGGER reject_heartbeat_crumb BEFORE INSERT ON memory_crumbs
+                 BEGIN SELECT RAISE(FAIL, 'injected crumb write failure'); END;",
+            )
+            .unwrap();
+    }
+    db.create_task("completion-truth", task_type, payload)
+        .unwrap();
+    let mut health_server = None;
+    let engine = if task_type == "model_health" {
+        let app = axum::Router::new().route(
+            "/v1/models",
+            axum::routing::get(|| async { StatusCode::SERVICE_UNAVAILABLE }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        health_server = Some(tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap()
+        }));
+        HeartbeatEngine::with_inference(
+            60,
+            db,
+            Arc::new(HttpInferenceBackend::new(
+                Some(format!("http://{addr}/v1/chat/completions")),
+                None,
+            )),
+        )
+    } else if task_type == "shell_exec" && !successful {
+        // `git status` is admitted, but fails in a workspace with no repository.
+        HeartbeatEngine::with_workspace(
+            60,
+            db,
+            aegis::WorkspaceCapability::new(dir.path()).unwrap(),
+        )
+    } else {
+        HeartbeatEngine::new(60, db)
+    };
+    let receipt = engine.pulse_once().await;
+    if let Some(server) = health_server {
+        server.abort();
+    }
+    assert_eq!(receipt.actions_dispatched, 1);
+    let (status, result): (String, String) = observer
+        .query_row(
+            "SELECT status, result FROM tasks WHERE id = 'completion-truth'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert!(result.contains(expected_result), "{result}");
+    assert_eq!(status, if successful { "completed" } else { "failed" });
+    assert_eq!(
+        receipt.status,
+        if successful { "nominal" } else { "degraded" }
+    );
+    let stored_status: String = observer
+        .query_row(
+            "SELECT status FROM heartbeats WHERE tick_id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored_status, receipt.status);
+    let transcript = std::fs::read_to_string(dir.path().join("transcript.jsonl")).unwrap();
+    let events: Vec<Value> = transcript
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert!(events.iter().any(|event| event["event_type"]
+        == if successful {
+            "task_completed"
+        } else {
+            "task_failed"
+        }));
+    assert!(!events.iter().any(|event| event["event_type"]
+        == if successful {
+            "task_failed"
+        } else {
+            "task_completed"
+        }));
+    if reject_crumb {
+        assert!(!result.contains("Memory crumbs recorded"));
+        assert!(engine.pulse_once().await.status == "nominal");
+    }
+}
+
+#[tokio::test]
+async fn completion_truth_heartbeat_shell_failure() {
+    assert_heartbeat_completion_truth(
+        "shell_exec",
+        PROBE_ADMITTED_COMMAND,
+        false,
+        false,
+        "Execution failure",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn completion_truth_heartbeat_crumb_failure() {
+    assert_heartbeat_completion_truth(
+        "consolidate_memory",
+        "",
+        true,
+        false,
+        "injected crumb write failure",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn completion_truth_heartbeat_unknown_task_failure() {
+    assert_heartbeat_completion_truth("not-a-task", "", false, false, "Unknown task type").await;
+}
+
+#[tokio::test]
+async fn completion_truth_heartbeat_success() {
+    assert_heartbeat_completion_truth(
+        "consolidate_memory",
+        "",
+        false,
+        true,
+        "Memory crumbs recorded",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn completion_truth_heartbeat_unhealthy_model_failure() {
+    assert_heartbeat_completion_truth("model_health", "", false, false, "unreachable or offline")
+        .await;
+}
+
+#[tokio::test]
+async fn completion_truth_heartbeat_shell_success() {
+    assert_heartbeat_completion_truth(
+        "shell_exec",
+        PROBE_ADMITTED_COMMAND,
+        false,
+        true,
+        "Exit code 0",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn completion_truth_http_executed_turn_budget_exhaustion() {
+    // A real inference turn produces a successful tool call, but never terminal output.
+    let app = axum::Router::new().route(
+        "/v1/chat/completions",
+        axum::routing::post(|| async {
+            axum::Json(serde_json::json!({
+                "choices": [{
+                    "message": {
+                        "content": null,
+                        "tool_calls": [{
+                            "id": "inspect-once",
+                            "type": "function",
+                            "function": {
+                                "name": "bash_eval",
+                                "arguments": "{\"command\":\"git status\"}"
+                            }
+                        }]
+                    },
+                    "finish_reason": "tool_calls"
+                }]
+            }))
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let mut state = create_test_state().await;
+    state.inference = Arc::new(HttpInferenceBackend::new(
+        Some(format!("http://{addr}/v1/chat/completions")),
+        None,
+    ));
+    state.agent = Arc::new(AgentEngine::new(
+        state.inference.clone(),
+        state.skills.clone(),
+        Some(state.db.clone()),
+    ));
+    let response = create_router(state)
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/agent/run")
+                .header("Authorization", auth_header())
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"prompt":"keep using tools","max_turns":1}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    server.abort();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body["turns_taken"], 1);
+    assert_eq!(body["steps"][0]["tool_calls"][0]["success"], true);
+    assert_eq!(body["completed"], false);
+    assert!(body["final_response"]
+        .as_str()
+        .unwrap()
+        .contains("maximum turn limit (1)"));
+    assert_eq!(body["status"], "incomplete");
+}
