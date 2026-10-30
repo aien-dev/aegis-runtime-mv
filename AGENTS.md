@@ -2,6 +2,13 @@
 
 This document defines the interface and protocols for autonomous agents interacting with or contributing to `aegis-runtime`.
 
+Development follows [Human-Directed Agentic Engineering (HDAE)](README.md#human-directed-agentic-engineering).
+Humans define goals, architecture, constraints, acceptance criteria and stopping points;
+agents implement, execute checks, diagnose failures and revise within those boundaries.
+Human review retains responsibility for claims, acceptance and release decisions.
+The README cites Gregory M. Kurtzer's documented method and systems-software case study (2026).
+This development method does not rename or limit the runtime behavior described below.
+
 ## Autonomous Operating Rules
 1. **Branch Isolation**: Never commit directly to `main`. Create feature branches (`feat/`, `fix/`, `perf/`), execute preflight checks, and open public Pull Requests immediately.
 2. **Zero Disk Secrets**: Never write plaintext `.env` files. Secrets resolve in memory from `atlas-vault get <KEY>`. `VaultResolver` is a client of that command, not a TPM. Read the process environment only when `AIEN_DEV_SECRET_FALLBACK=1`. Redact secrets with `[REDACTED_BY_ATLAS_VAULT]`.
