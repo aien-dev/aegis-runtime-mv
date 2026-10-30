@@ -268,22 +268,23 @@ async fn timeout_is_failed_timeout_with_runner_certainty() {
     let mut c = cfg(2);
     c.per_task_timeout = Some(Duration::from_millis(40));
     let r = WorkflowExecutor::new(c).unwrap().run(spec).await;
-    for (id, cert) in [
-        ("read_only", EffectCertainty::NoEffect),
-        ("writer", EffectCertainty::Uncertain),
-    ] {
-        match &r.snapshot.states[&tid(id)] {
-            TaskState::Failed(f) => {
-                assert_eq!(f.class, FailureClass::Timeout);
-                assert_eq!(f.effect_certainty, cert);
-            }
-            other => panic!("{id}: {other:?}"),
+    match &r.snapshot.states[&tid("read_only")] {
+        TaskState::Failed(f) => {
+            assert_eq!(f.class, FailureClass::Timeout);
+            assert_eq!(f.effect_certainty, EffectCertainty::NoEffect);
         }
+        other => panic!("read_only: {other:?}"),
     }
-    assert!(matches!(
-        r.snapshot.states[&tid("after")],
-        TaskState::Skipped { .. }
-    ));
+    // Since #55 an Uncertain timeout is not reported as Failed, and its
+    // dependent waits behind it instead of being skipped.
+    match &r.snapshot.states[&tid("writer")] {
+        TaskState::Uncertain(f) => {
+            assert_eq!(f.class, FailureClass::Timeout);
+            assert_eq!(f.effect_certainty, EffectCertainty::Uncertain);
+        }
+        other => panic!("writer: {other:?}"),
+    }
+    assert_eq!(r.snapshot.states[&tid("after")], TaskState::Pending);
 }
 
 #[tokio::test]
@@ -293,12 +294,16 @@ async fn cancellation_cancels_running_and_pending_and_starts_nothing_new() {
         .add_task(
             "long",
             &[],
-            runner_fn(|c: TaskContext| {
-                Box::pin(async move {
-                    c.cancel.cancelled().await;
-                    TaskOutcome::Cancelled
-                })
-            }),
+            // Waits for the token and touches nothing: NoEffect (#55).
+            runner_fn_with_certainty(
+                |c: TaskContext| {
+                    Box::pin(async move {
+                        c.cancel.cancelled().await;
+                        TaskOutcome::Cancelled
+                    })
+                },
+                EffectCertainty::NoEffect,
+            ),
         )
         .unwrap()
         .add_task("next", &["long"], p.task("next", 1))
@@ -326,7 +331,8 @@ async fn cancellation_cancels_running_and_pending_and_starts_nothing_new() {
 #[tokio::test]
 async fn total_budget_cancels_the_workflow() {
     let spec = b()
-        .add_task("slow", &[], ok(10_000))
+        // A sleeper with no effect, so the interrupt is a plain cancel (#55).
+        .add_task("slow", &[], hang(EffectCertainty::NoEffect))
         .unwrap()
         .add_task("n", &["slow"], ok(1))
         .unwrap()
@@ -668,12 +674,16 @@ async fn cancel_while_waiting_for_approval_leaves_nothing_unfinished() {
         .add_task(
             "long",
             &[],
-            runner_fn(|c: TaskContext| {
-                Box::pin(async move {
-                    c.cancel.cancelled().await;
-                    TaskOutcome::Cancelled
-                })
-            }),
+            // Waits for the token and touches nothing: NoEffect (#55).
+            runner_fn_with_certainty(
+                |c: TaskContext| {
+                    Box::pin(async move {
+                        c.cancel.cancelled().await;
+                        TaskOutcome::Cancelled
+                    })
+                },
+                EffectCertainty::NoEffect,
+            ),
         )
         .unwrap()
         .build()
@@ -857,4 +867,132 @@ async fn runner_error_text_is_truncated_before_it_is_recorded() {
     let r = WorkflowExecutor::new(cfg(1)).unwrap().run(spec).await;
     let msg = &r.failures[&tid("noisy")].cause[0].message;
     assert!(msg.len() <= aegis::failure::MAX_CAUSE_MESSAGE_BYTES);
+}
+
+// ---- G2 (#55): "not known whether it happened" is its own state ----
+
+/// A body that never finishes on its own, with an explicit interrupt certainty.
+fn hang(cert: EffectCertainty) -> Arc<dyn TaskRunner> {
+    runner_fn_with_certainty(
+        |_c| {
+            Box::pin(async {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                TaskOutcome::Completed(serde_json::json!(null))
+            })
+        },
+        cert,
+    )
+}
+
+#[tokio::test]
+async fn g2_timeout_on_uncertain_runner_is_uncertain_and_blocks_dependents() {
+    let p = Probe::new();
+    let spec = b()
+        .add_task("writer", &[], hang(EffectCertainty::Uncertain))
+        .unwrap()
+        .add_task("after", &["writer"], p.task("after", 1))
+        .unwrap()
+        .add_task("after2", &["after"], p.task("after2", 1))
+        .unwrap()
+        .add_task("free", &[], p.task("free", 1))
+        .unwrap()
+        .build()
+        .unwrap();
+    let mut c = cfg(2);
+    c.per_task_timeout = Some(Duration::from_millis(40));
+    let r = WorkflowExecutor::new(c).unwrap().run(spec).await;
+    match &r.snapshot.states[&tid("writer")] {
+        TaskState::Uncertain(f) => {
+            assert_eq!(f.class, FailureClass::Timeout);
+            assert_eq!(f.effect_certainty, EffectCertainty::Uncertain);
+        }
+        other => panic!("writer: {other:?}"),
+    }
+    assert!(!r.snapshot.states[&tid("writer")].is_terminal());
+    // Dependents are neither run nor skipped: they wait behind the unknown.
+    for d in ["after", "after2"] {
+        assert_eq!(r.snapshot.states[&tid(d)], TaskState::Pending, "{d}");
+        assert_eq!(p.runs(d), 0, "{d} ran");
+        assert_eq!(r.blocked_behind_uncertain[&tid(d)], tid("writer"), "{d}");
+    }
+    assert_eq!(r.snapshot.states[&tid("free")], TaskState::Completed);
+    assert!(!r.blocked_behind_uncertain.contains_key(&tid("free")));
+    for t in ["writer", "after", "after2"] {
+        assert!(r.unfinished.contains(&tid(t)), "{t} not listed unfinished");
+    }
+    assert!(r.failures.contains_key(&tid("writer")));
+    assert!(r.events.iter().any(|e| e.state == "uncertain"));
+    gapless(&r);
+}
+
+#[tokio::test]
+async fn g2_timeout_on_no_effect_runner_is_still_failed() {
+    let spec = b()
+        .add_task("read_only", &[], hang(EffectCertainty::NoEffect))
+        .unwrap()
+        .add_task("after", &["read_only"], ok(1))
+        .unwrap()
+        .build()
+        .unwrap();
+    let mut c = cfg(1);
+    c.per_task_timeout = Some(Duration::from_millis(40));
+    let r = WorkflowExecutor::new(c).unwrap().run(spec).await;
+    match &r.snapshot.states[&tid("read_only")] {
+        TaskState::Failed(f) => {
+            assert_eq!(f.class, FailureClass::Timeout);
+            assert_eq!(f.effect_certainty, EffectCertainty::NoEffect);
+        }
+        other => panic!("read_only: {other:?}"),
+    }
+    assert_eq!(
+        r.snapshot.states[&tid("after")],
+        TaskState::Skipped {
+            prerequisite: tid("read_only")
+        }
+    );
+    assert!(r.blocked_behind_uncertain.is_empty());
+}
+
+#[tokio::test]
+async fn g2_cancel_interrupting_uncertain_runner_is_uncertain_not_cancelled() {
+    let spec = b()
+        .add_task("writer", &[], hang(EffectCertainty::Uncertain))
+        .unwrap()
+        .add_task("reader", &[], hang(EffectCertainty::NoEffect))
+        .unwrap()
+        .build()
+        .unwrap();
+    let cancel = CancelToken::new();
+    let c2 = cancel.clone();
+    let exec = WorkflowExecutor::new(cfg(2))
+        .unwrap()
+        .with_cancel_token(cancel);
+    let h = tokio::spawn(async move { exec.run(spec).await });
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    c2.cancel();
+    let r = h.await.unwrap();
+    match &r.snapshot.states[&tid("writer")] {
+        TaskState::Uncertain(f) => {
+            assert_eq!(f.class, FailureClass::Cancelled);
+            assert_eq!(f.effect_certainty, EffectCertainty::Uncertain);
+        }
+        other => panic!("writer: {other:?}"),
+    }
+    assert_eq!(r.snapshot.states[&tid("reader")], TaskState::Cancelled);
+}
+
+#[tokio::test]
+async fn g2_uncertain_state_round_trips_in_the_snapshot() {
+    let spec = b()
+        .add_task("writer", &[], hang(EffectCertainty::Uncertain))
+        .unwrap()
+        .build()
+        .unwrap();
+    let mut c = cfg(1);
+    c.per_task_timeout = Some(Duration::from_millis(20));
+    let r = WorkflowExecutor::new(c).unwrap().run(spec).await;
+    let j = serde_json::to_string(&r.snapshot).unwrap();
+    assert!(j.contains("\"state\":\"uncertain\""), "{j}");
+    let back: aegis::orchestration::workflow::WorkflowSnapshot = serde_json::from_str(&j).unwrap();
+    assert_eq!(back, r.snapshot);
 }

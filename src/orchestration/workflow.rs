@@ -105,11 +105,20 @@ pub enum TaskState {
     Completed,
     Failed(FailureRecord),
     Cancelled,
-    Skipped { prerequisite: TaskId },
+    Skipped {
+        prerequisite: TaskId,
+    },
+    /// Started, then interrupted (timeout or cancel) while its effect
+    /// certainty was `Uncertain`: not known whether the effect happened. Not
+    /// terminal: it must be reconciled against the effect authority before
+    /// anything else happens, and its dependents stay Pending behind it
+    /// (issue #55). The record says why it was interrupted.
+    Uncertain(FailureRecord),
 }
 
 impl TaskState {
-    /// Terminal means the task will never change state again.
+    /// Terminal means the task will never change state again. `Uncertain` is
+    /// not terminal: reconciliation decides its final state.
     pub fn is_terminal(&self) -> bool {
         matches!(
             self,
@@ -128,6 +137,7 @@ impl TaskState {
             Self::Failed(_) => "failed",
             Self::Cancelled => "cancelled",
             Self::Skipped { .. } => "skipped",
+            Self::Uncertain(_) => "uncertain",
         }
     }
 }
@@ -412,10 +422,15 @@ pub struct WorkflowSnapshot {
 pub struct WorkflowReport {
     pub status: WorkflowStatus,
     pub snapshot: WorkflowSnapshot,
-    /// Failure records for Failed, Skipped and Cancelled tasks.
+    /// Failure records for Failed, Skipped, Cancelled and Uncertain tasks.
     pub failures: BTreeMap<TaskId, FailureRecord>,
-    /// Tasks left non-terminal (waiting for approval, or blocked behind one).
+    /// Tasks left non-terminal (waiting for approval, uncertain, or blocked
+    /// behind either).
     pub unfinished: Vec<TaskId>,
+    /// Pending tasks that wait, directly or through other pending tasks, on
+    /// an `Uncertain` task, mapped to one uncertain task they wait on.
+    /// They were neither run nor skipped.
+    pub blocked_behind_uncertain: BTreeMap<TaskId, TaskId>,
     pub events: Vec<WorkflowEvent>,
     pub peak_concurrency: usize,
     pub budget_exhausted: bool,
@@ -558,6 +573,10 @@ impl Recorder {
                 task_id,
                 prerequisite: prerequisite.to_string(),
             },
+            // No bus variant yet (issue #55 item 4). Publishing it as Failed
+            // or Cancelled would be false, so the bus stays silent; the
+            // ledger event "uncertain" is still written in sequence.
+            TaskState::Uncertain(_) => return None,
         })
     }
 }
@@ -782,7 +801,8 @@ impl WorkflowExecutor {
             // is settled here, so Cancelled never lists unfinished tasks.
             self.cancel_open(&rec, &ids, &nodes);
         }
-        self.report(rec, ids, peak, budget_exhausted, cancel_seen)
+        let blocked = blocked_behind_uncertain(&rec, &ids, &nodes);
+        self.report(rec, ids, peak, budget_exhausted, cancel_seen, blocked)
     }
 
     /// Moves every non-terminal, non-running task to Cancelled. A task
@@ -874,8 +894,12 @@ impl WorkflowExecutor {
                     interrupt,
                     "task cancelled while running",
                 );
-                rec.note_failure(id, f);
-                rec.transition(id, TaskState::Cancelled, None);
+                rec.note_failure(id, f.clone());
+                if interrupt == EffectCertainty::Uncertain {
+                    rec.transition(id, TaskState::Uncertain(f), None);
+                } else {
+                    rec.transition(id, TaskState::Cancelled, None);
+                }
             }
             Finish::TimedOut => {
                 let f = self.failure(
@@ -886,7 +910,11 @@ impl WorkflowExecutor {
                     "per-task timeout elapsed",
                 );
                 rec.note_failure(id, f.clone());
-                rec.transition(id, TaskState::Failed(f), None);
+                if interrupt == EffectCertainty::Uncertain {
+                    rec.transition(id, TaskState::Uncertain(f), None);
+                } else {
+                    rec.transition(id, TaskState::Failed(f), None);
+                }
             }
         }
     }
@@ -898,6 +926,7 @@ impl WorkflowExecutor {
         peak: usize,
         budget_exhausted: bool,
         cancelled: bool,
+        blocked_behind_uncertain: BTreeMap<TaskId, TaskId>,
     ) -> WorkflowReport {
         let (unfinished, any_waiting, all_done) = {
             let l = rec.ledger.lock();
@@ -934,9 +963,40 @@ impl WorkflowExecutor {
             },
             failures: l.failures.clone(),
             unfinished,
+            blocked_behind_uncertain,
             events: l.events.clone(),
             peak_concurrency: peak,
             budget_exhausted,
+        }
+    }
+}
+
+/// Pending tasks that wait on an `Uncertain` task, directly or through other
+/// pending tasks. Each maps to one uncertain task it waits on (several may
+/// apply; the first one found is named).
+fn blocked_behind_uncertain(
+    rec: &Recorder,
+    ids: &[TaskId],
+    nodes: &HashMap<TaskId, &TaskNode>,
+) -> BTreeMap<TaskId, TaskId> {
+    let mut blocked: BTreeMap<TaskId, TaskId> = BTreeMap::new();
+    loop {
+        let mut changed = false;
+        for id in ids {
+            if blocked.contains_key(id) || rec.state_of(id) != TaskState::Pending {
+                continue;
+            }
+            let root = nodes[id].deps.iter().find_map(|d| match rec.state_of(d) {
+                TaskState::Uncertain(_) => Some(d.clone()),
+                _ => blocked.get(d).cloned(),
+            });
+            if let Some(root) = root {
+                blocked.insert(id.clone(), root);
+                changed = true;
+            }
+        }
+        if !changed {
+            return blocked;
         }
     }
 }
