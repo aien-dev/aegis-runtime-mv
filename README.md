@@ -46,9 +46,10 @@ aegis-runtime is an attachment of [AienOS](https://github.com/aien-dev/aienix), 
 
 1. **Axum control plane** (`src/gateway.rs`).
    WebSockets (`/ws`, `/api/v1/ws`), server-sent events (`/api/v1/events`, `/events`), and REST on port 18096: `/health`, `/api/v1/health`, `/api/v1/chat`, `/api/v1/agent/run`, `/api/v1/heartbeat/tick`, `/api/v1/tasks`, `/api/v1/skills`, `/api/v1/skills/execute`, `/api/v1/shell`, `/api/v1/discord/relay`, plus OpenAI-style `/v1/chat/completions` and `/v1/models`, and `/v1/probe`.
+   Agent runs return `status: "completed"` only when `completed` is true. A run that returns without terminal output (including turn-budget exhaustion) returns `status: "incomplete"`, `completed: false`, and its diagnostic summary. HTTP 200 means the run returned a result, not that its objective completed. WebSocket `agent_result` messages carry the same top-level status and retain `result.completed`; execution errors remain `agent_error`.
 
 2. **Heartbeat engine** (`src/heartbeat.rs`).
-   A polling loop that claims each pending task before running it, runs it, and emits a pulse receipt.
+   A polling loop that claims each pending task before running it and emits a pulse receipt. Only successful actions become `completed` tasks and `task_completed` transcript events. Unhealthy model checks, rejected or failed shell execution, failed memory writes, and unknown task types become `failed` tasks with the error in `result` and a `task_failed` event. Failed tasks are not automatically retried. A pulse is `degraded` if any action, task persistence operation, or queue read/claim fails, otherwise `nominal`; `actions_dispatched` counts claimed actions, not successful completions.
 
 3. **Local model seat inference** (optional, `src/inference.rs`).
    With `--inference http`, requests go to the OpenAI-style endpoint given by `--model-url` (default `http://127.0.0.1:18006/v1/chat/completions`) with the model name `atlas-lightning-omni`. Without it, the mock backend (`MockInferenceClient` from aien-protocols) answers. `aegis status` then reports the backend as `mock-protocol-model`; the words "NativeTransformer" in that output name the mock, not a real model.

@@ -237,6 +237,24 @@ impl Database {
         Ok(())
     }
 
+    pub fn fail_task(&self, id: &str, error: &str) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE tasks SET status = 'failed', result = ?1, completed_at = NULL WHERE id = ?2",
+            params![error, id],
+        )?;
+
+        self.record_transcript(
+            "task_failed",
+            &serde_json::json!({
+                "id": id,
+                "error": error,
+                "failed_at": Utc::now().to_rfc3339(),
+            }),
+        );
+        Ok(())
+    }
+
     pub fn store_crumb(
         &self,
         key: &str,

@@ -95,9 +95,11 @@ impl HeartbeatEngine {
         let tick = self.tick_counter.fetch_add(1, Ordering::SeqCst) + 1;
         let now = Utc::now().to_rfc3339();
 
+        let mut degraded = false;
         let pending_tasks = match self.db.list_pending_tasks() {
             Ok(tasks) => tasks,
             Err(e) => {
+                degraded = true;
                 warn!(
                     "Heartbeat pulse #{} could not list pending tasks: {}",
                     tick, e
@@ -114,12 +116,13 @@ impl HeartbeatEngine {
                 Ok(true) => {}
                 Ok(false) => continue,
                 Err(e) => {
+                    degraded = true;
                     warn!("Heartbeat could not claim task {}: {}", task.id, e);
                     continue;
                 }
             }
 
-            let res_text = match task.task_type.as_str() {
+            let outcome = match task.task_type.as_str() {
                 // "max_health" is the former name, kept so tasks already queued under it still run.
                 "model_health" | "max_health" => {
                     let is_healthy = if let Some(ref inf) = self.inference {
@@ -134,9 +137,9 @@ impl HeartbeatEngine {
                     };
 
                     if is_healthy {
-                        "Local model seat verified ACTIVE on port 18006".to_string()
+                        Ok("Local model seat verified ACTIVE on port 18006".to_string())
                     } else {
-                        "Local model seat unreachable or offline on port 18006".to_string()
+                        Err("Local model seat unreachable or offline on port 18006".to_string())
                     }
                 }
                 "build_monitor" | "shell_exec" => {
@@ -151,28 +154,39 @@ impl HeartbeatEngine {
                         .dispatch_shell_gated(cmd_to_run, None, 15)
                         .await
                     {
-                        Ok(stdout) => format!("Exit code 0: {}", stdout.trim()),
-                        Err(e) => format!("Execution failure: {}", e),
+                        Ok(stdout) => Ok(format!("Exit code 0: {}", stdout.trim())),
+                        Err(e) => Err(format!("Execution failure: {}", e)),
                     }
                 }
                 "consolidate_memory" => {
                     let crumb_key = format!("consolidation_tick_{}", tick);
-                    let _ = self.db.store_crumb(
-                        &crumb_key,
-                        "Episodic memory consolidated into WAL",
-                        "heartbeat",
-                    );
-                    "Memory crumbs recorded".to_string()
+                    self.db
+                        .store_crumb(
+                            &crumb_key,
+                            "Episodic memory consolidated into WAL",
+                            "heartbeat",
+                        )
+                        .map(|()| "Memory crumbs recorded".to_string())
+                        .map_err(|e| format!("Memory consolidation failure: {}", e))
                 }
-                "system_telemetry" => "System telemetry nominal: GB10 aarch64".to_string(),
-                _ => "Autonomous task processed by heartbeat loop".to_string(),
+                "system_telemetry" => Ok("System telemetry nominal: GB10 aarch64".to_string()),
+                _ => Err(format!("Unknown task type: {}", task.task_type)),
             };
 
-            if let Err(e) = self.db.complete_task(&task.id, &res_text) {
-                warn!(
-                    "Heartbeat could not record the result of task {}: {}",
-                    task.id, e
-                );
+            let failure = match outcome {
+                Ok(result) => self
+                    .db
+                    .complete_task(&task.id, &result)
+                    .err()
+                    .map(|e| format!("Could not record task completion: {}", e)),
+                Err(error) => Some(error),
+            };
+            if let Some(error) = failure {
+                degraded = true;
+                warn!("Heartbeat task {} failed: {}", task.id, error);
+                if let Err(e) = self.db.fail_task(&task.id, &error) {
+                    warn!("Heartbeat could not record failure of task {}: {}", task.id, e);
+                }
             }
             actions += 1;
         }
@@ -180,12 +194,12 @@ impl HeartbeatEngine {
         let receipt = PulseReceipt {
             tick_id: tick,
             timestamp: now,
-            status: "nominal",
+            status: if degraded { "degraded" } else { "nominal" },
             tasks_scanned: tasks_count,
             actions_dispatched: actions,
             notes: format!(
-                "Autonomous tick #{} processed {} pending tasks",
-                tick, tasks_count
+                "Autonomous tick #{} scanned {} pending tasks, dispatched {} actions, status {}",
+                tick, tasks_count, actions, if degraded { "degraded" } else { "nominal" }
             ),
         };
 
@@ -216,8 +230,8 @@ impl HeartbeatEngine {
                 "Sovereign runtime heartbeat pulse",
                 "--vector",
                 &format!(
-                    "Tick #{} nominal | tasks: {} | actions: {}",
-                    tick, tasks_count, actions
+                    "Tick #{} {} | tasks: {} | actions: {}",
+                    tick, receipt.status, tasks_count, actions
                 ),
                 ".",
             ])
@@ -261,10 +275,9 @@ mod tests {
     #[tokio::test]
     async fn test_heartbeat_pulse_and_task_execution() {
         let db = Arc::new(Database::open_in_memory().unwrap());
-        db.create_task("hb1", "model_health", "check").unwrap();
+        db.create_task("hb1", "system_telemetry", "check").unwrap();
         db.create_task("hb2", "consolidate_memory", "sync").unwrap();
-        db.create_task("hb3", "shell_exec", "echo 'heartbeat task success'")
-            .unwrap();
+        db.create_task("hb3", "shell_exec", "git status").unwrap();
 
         let engine = HeartbeatEngine::new(60, db.clone());
         let receipt = engine.pulse_once().await;
