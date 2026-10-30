@@ -144,9 +144,11 @@ impl Database {
         Ok(turns)
     }
 
-    pub fn record_heartbeat_tick(&self, receipt: &PulseReceipt) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
+    /// Projection failure changes the receipt before its authoritative SQLite transaction commits.
+    pub fn record_heartbeat_tick(&self, receipt: &mut PulseReceipt) -> Result<(), rusqlite::Error> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        tx.execute(
             "INSERT OR REPLACE INTO heartbeats (tick_id, timestamp, status, tasks_scanned, actions_dispatched, notes)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
@@ -158,9 +160,16 @@ impl Database {
                 receipt.notes
             ],
         )?;
-
-        self.record_transcript("heartbeat_tick", &receipt)?;
-        Ok(())
+        if let Err(error) = self.record_transcript("heartbeat_tick", receipt) {
+            receipt.status = "degraded";
+            receipt.notes.push_str(&format!("; receipt projection failed: {}", error));
+            tracing::warn!("Heartbeat transcript projection failed: {}", error);
+            tx.execute(
+                "UPDATE heartbeats SET status=?2,notes=?3 WHERE tick_id=?1",
+                params![receipt.tick_id as i64, receipt.status, receipt.notes],
+            )?;
+        }
+        tx.commit()
     }
 
     pub fn create_task(

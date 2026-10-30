@@ -8,7 +8,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 type DbResult<T> = Result<T, rusqlite::Error>;
@@ -103,6 +103,12 @@ impl TerminalOutcome {
     }
 }
 
+#[derive(Default)]
+pub(crate) struct TaskFlushSummary {
+    pub completed: usize,
+    pub failed: usize,
+}
+
 /// A cancelled pulse cannot silently forget a claimed task while its owner remains alive.
 pub(crate) struct TaskExecution<'a> {
     db: &'a Database,
@@ -156,11 +162,15 @@ impl Database {
     }
 
     /// Retries immutable outcomes before scanning new tasks, even when there is no queued work.
-    pub(crate) fn retry_task_outcomes(&self) -> DbResult<()> {
+    pub(crate) fn retry_task_outcomes(&self) -> DbResult<TaskFlushSummary> {
         let mut pending = self.owner.pending.lock().unwrap();
         let mut first_error = None;
+        let mut summary = TaskFlushSummary::default();
         pending.retain(|outcome| match self.commit_terminal(outcome) {
-            Ok(()) => false,
+            Ok(()) => {
+                if outcome.success { summary.completed += 1; } else { summary.failed += 1; }
+                false
+            }
             Err(error) => {
                 if first_error.is_none() {
                     first_error = Some(error);
@@ -173,7 +183,7 @@ impl Database {
         if let Some(error) = first_error {
             Err(error)
         } else {
-            export
+            export.map(|()| summary)
         }
     }
 
@@ -190,6 +200,11 @@ impl Database {
     fn commit_terminal(&self, outcome: &TerminalOutcome) -> DbResult<()> {
         let mut conn = self.conn.lock().unwrap();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        Self::write_terminal(&tx, outcome)?;
+        tx.commit()
+    }
+
+    fn write_terminal(tx: &rusqlite::Transaction<'_>, outcome: &TerminalOutcome) -> DbResult<()> {
         let status = if outcome.success { "completed" } else { "failed" };
         let changed = tx.execute(
             "UPDATE tasks SET status=?1, result=?2, completed_at=?3 WHERE id=?4 AND status='running' AND claim_id=?5 AND owner_id=?6",
@@ -231,11 +246,11 @@ impl Database {
             "INSERT INTO task_terminal_events(event_id,task_id,claim_id,event_json,exported) VALUES(?1,?2,?3,?4,0)",
             params![outcome.event_id, outcome.claim.id, outcome.claim.token, event],
         )?;
-        tx.commit()
+        Ok(())
     }
 
     /// A live owner's lock is never stolen. Unknown legacy owners need a quiescent migration.
-    pub(crate) fn recover_abandoned_tasks(&self) -> DbResult<()> {
+    pub(crate) fn recover_abandoned_tasks(&self) -> DbResult<usize> {
         let claims: Vec<TaskClaim> = {
             let conn = self.conn.lock().unwrap();
             let unknown: i64 = conn.query_row(
@@ -256,6 +271,7 @@ impl Database {
             })?;
             rows.collect::<DbResult<_>>()?
         };
+        let mut recovered = 0;
         if let Some(directory) = &self.owner.directory {
             for claim in claims {
                 if claim.owner == self.owner.id {
@@ -279,9 +295,64 @@ impl Database {
                     claim,
                     Err("abandoned: outcome unknown".into()),
                 ))?;
+                recovered += 1;
             }
         }
-        Ok(())
+        Ok(recovered)
+    }
+
+    /// Operator-only migration. All old and new task writers must be stopped first.
+    /// `quiescent` acknowledges that pre-claim binaries cannot be detected with owner locks.
+    pub fn migrate_legacy_running_tasks(path: &Path, quiescent: bool) -> DbResult<usize> {
+        if !quiescent {
+            return Err(refused("legacy migration requires --quiescent after stopping all task writers"));
+        }
+        // A mistyped path must not create a new database and appear to migrate successfully.
+        let conn = rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        let db = Self {
+            conn: Arc::new(Mutex::new(conn)),
+            transcript_path: path.parent().map(|parent| parent.join("transcript.jsonl")),
+            owner: TaskOwner::new(Some(path))?,
+        };
+        let mut owner_locks = Vec::new();
+        for entry in std::fs::read_dir(db.owner.directory.as_ref().unwrap()).map_err(io_error)? {
+            let entry = entry.map_err(io_error)?;
+            let name = entry.file_name();
+            let name = name.to_str().ok_or_else(|| refused("invalid task owner identity"))?;
+            Uuid::parse_str(name).map_err(|_| refused("invalid task owner identity"))?;
+            if name == db.owner.id { continue; }
+            match lock_file(&entry.path(), true) {
+                Ok(lock) => owner_locks.push(lock),
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    return Err(refused("legacy migration refused: live task owner; stop all task writers"));
+                }
+                Err(error) => return Err(io_error(error)),
+            }
+        }
+        db.init_tables()?;
+        let migrated = {
+            let mut conn = db.conn.lock().unwrap();
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let ids = {
+                let mut stmt = tx.prepare("SELECT id FROM tasks WHERE status='running' AND (owner_id IS NULL OR claim_id IS NULL)")?;
+                let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+                rows.collect::<DbResult<Vec<_>>>()?
+            };
+            for id in &ids {
+                let claim = TaskClaim { id: id.clone(), token: Uuid::new_v4().to_string(), owner: db.owner.id.clone() };
+                let changed = tx.execute(
+                    "UPDATE tasks SET claim_id=?2,owner_id=?3 WHERE id=?1 AND status='running' AND (owner_id IS NULL OR claim_id IS NULL)",
+                    params![claim.id, claim.token, claim.owner],
+                )?;
+                if changed != 1 { return Err(refused("legacy migration refused: task changed")); }
+                Self::write_terminal(&tx, &TerminalOutcome::new(claim, Err("abandoned: outcome unknown".into())))?;
+            }
+            tx.commit()?;
+            ids.len()
+        };
+        db.export_terminal_events()?;
+        drop(owner_locks);
+        Ok(migrated)
     }
 
     /// SQLite is authoritative. JSONL is a retryable projection identified by stable event IDs.

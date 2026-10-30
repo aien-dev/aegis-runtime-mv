@@ -26,6 +26,36 @@ fn exported_events(dir: &tempfile::TempDir) -> Vec<Value> {
         .filter(|event| matches!(event["event_type"].as_str(), Some("task_completed" | "task_failed"))).collect()
 }
 
+
+// Re-exec isolates HOME and command capture from other concurrently running tests.
+fn capture_crumbs_in_child(test_name: &str) -> bool {
+    if std::env::var_os("AEGIS_TEST_CRUMB_ARGV").is_some() {
+        return false;
+    }
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join(".local/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let executable = bin.join("spark-crumbs");
+    std::fs::write(&executable, "#!/bin/sh\nprintf '%s\\n' \"$@\" >> \"$AEGIS_TEST_CRUMB_ARGV\"\n").unwrap();
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let status = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", test_name, "--nocapture"])
+        .env("HOME", dir.path())
+        .env("AEGIS_TEST_CRUMB_ARGV", dir.path().join("crumb-argv"))
+        .status().unwrap();
+    assert!(status.success());
+    true
+}
+
+fn assert_crumb_receipt(receipt: &aegis::PulseReceipt) {
+    let path = std::env::var_os("AEGIS_TEST_CRUMB_ARGV").expect("isolated command capture");
+    let arguments = std::fs::read_to_string(path).unwrap();
+    let arguments: Vec<_> = arguments.lines().collect();
+    let vector = arguments.windows(2).filter(|pair| pair[0] == "--vector").last().unwrap()[1];
+    assert_eq!(vector, format!("Tick #{} {} | tasks: {} | actions: {}",
+        receipt.tick_id, receipt.status, receipt.tasks_scanned, receipt.actions_dispatched));
+}
 #[tokio::test]
 async fn round2_interrupted_claim_reopen_abandons_once_without_replay() {
     let (dir, db, observer) = fixture();
@@ -104,7 +134,11 @@ async fn finalization_retry(successful: bool) {
     // Retained outcomes belong to the DB owner, not a replaceable heartbeat engine.
     drop(engine);
     let engine = HeartbeatEngine::new(60, db);
+    let mut rx = engine.subscribe();
     let second = engine.pulse_once().await;
+    assert_eq!(second.status, if successful { "nominal" } else { "degraded" });
+    assert_eq!(rx.recv().await.unwrap().status, second.status);
+    if !successful { assert_crumb_receipt(&second); }
     assert_eq!(second.actions_dispatched, 0);
     assert_eq!(state(&observer,"retry").0, if successful {"completed"} else {"failed"});
     assert!(state(&observer,"retry").1.unwrap().contains(if successful {"Memory crumbs recorded"} else {"Unknown task type"}));
@@ -115,7 +149,10 @@ async fn finalization_retry(successful: bool) {
 #[tokio::test]
 async fn round2_successful_outcome_retained_after_failed_finalization() { finalization_retry(true).await; }
 #[tokio::test]
-async fn round2_failed_outcome_retained_after_failed_finalization() { finalization_retry(false).await; }
+async fn round2_failed_outcome_retained_after_failed_finalization() {
+    if capture_crumbs_in_child("round2_failed_outcome_retained_after_failed_finalization") { return; }
+    finalization_retry(false).await;
+}
 
 #[tokio::test]
 async fn round2_unwritable_transcript_keeps_one_durable_event_and_retries_export() {
@@ -201,6 +238,7 @@ async fn round2_panicking_health_action_does_not_kill_loop() {
 }
 #[tokio::test]
 async fn round2_cancelled_claim_retains_unknown_failure_without_reexecution() {
+    if capture_crumbs_in_child("round2_cancelled_claim_retains_unknown_failure_without_reexecution") { return; }
     let (_dir,db,observer)=fixture();
     db.create_task("cancel","model_health","").unwrap();
     let health=Arc::new(HealthProbe{calls:AtomicUsize::new(0),hang:true});
@@ -209,7 +247,12 @@ async fn round2_cancelled_claim_retains_unknown_failure_without_reexecution() {
     tokio::time::timeout(Duration::from_secs(5),async { while health.calls.load(Ordering::SeqCst)==0 { tokio::task::yield_now().await; } }).await.unwrap();
     running.abort();
     assert!(running.await.unwrap_err().is_cancelled());
-    let receipt=HeartbeatEngine::new(60,db).pulse_once().await;
+    let engine = HeartbeatEngine::new(60,db);
+    let mut rx = engine.subscribe();
+    let receipt = engine.pulse_once().await;
+    assert_eq!(receipt.status,"degraded");
+    assert_eq!(rx.recv().await.unwrap().status,"degraded");
+    assert_crumb_receipt(&receipt);
     assert_eq!(receipt.actions_dispatched,0);
     assert_eq!(state(&observer,"cancel"),("failed".into(),Some("abandoned: outcome unknown".into())));
     assert_eq!(event_count(&observer),1);

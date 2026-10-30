@@ -13,6 +13,16 @@ use crate::inference::InferenceEngine;
 use crate::persistence::Database;
 use crate::security::WorkspaceCapability;
 
+const HEALTH_ACTION_TIMEOUT: Duration = Duration::from_secs(15);
+
+async fn http_model_health(endpoint: &str) -> Result<bool, reqwest::Error> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(HEALTH_ACTION_TIMEOUT)
+        .timeout(HEALTH_ACTION_TIMEOUT)
+        .build()?;
+    Ok(client.get(endpoint).send().await?.status().is_success())
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PulseReceipt {
     pub tick_id: u64,
@@ -97,7 +107,20 @@ impl HeartbeatEngine {
         let tick = self.tick_counter.fetch_add(1, Ordering::SeqCst) + 1;
         let now = Utc::now().to_rfc3339();
 
-        let mut degraded = self.db.retry_task_outcomes().is_err();
+        let mut degraded = match self.db.recover_abandoned_tasks() {
+            Ok(recovered) => recovered != 0,
+            Err(error) => {
+                warn!("Heartbeat could not recover abandoned claims: {}", error);
+                true
+            }
+        };
+        degraded |= match self.db.retry_task_outcomes() {
+            Ok(summary) => summary.failed != 0,
+            Err(error) => {
+                warn!("Heartbeat retained finalization or transcript export for retry: {}", error);
+                true
+            }
+        };
         let pending_tasks = match self.db.list_pending_tasks() {
             Ok(tasks) => tasks,
             Err(e) => {
@@ -129,16 +152,16 @@ impl HeartbeatEngine {
                 match task.task_type.as_str() {
                     // "max_health" is the former name, kept so tasks already queued under it still run.
                     "model_health" | "max_health" => {
-                        let is_healthy = if let Some(ref inf) = self.inference {
-                            inf.check_health().await
-                        } else {
-                            reqwest::Client::new()
-                                .get("http://127.0.0.1:18006/v1/models")
-                                .send()
-                                .await
-                                .map(|r| r.status().is_success())
-                                .unwrap_or(false)
+                        let health = async {
+                            if let Some(ref inf) = self.inference {
+                                inf.check_health().await
+                            } else {
+                                http_model_health("http://127.0.0.1:18006/v1/models").await.unwrap_or(false)
+                            }
                         };
+                        let is_healthy = tokio::time::timeout(HEALTH_ACTION_TIMEOUT, health)
+                            .await
+                            .map_err(|_| "Model health deadline exceeded: outcome unknown".to_string())?;
     
                         if is_healthy {
                             Ok("Local model seat verified ACTIVE on port 18006".to_string())
@@ -184,10 +207,13 @@ impl HeartbeatEngine {
             execution.finish(outcome);
             actions += 1;
         }
-        if let Err(error) = self.db.retry_task_outcomes() {
-            degraded = true;
-            warn!("Heartbeat retained finalization or transcript export for retry: {}", error);
-        }
+        degraded |= match self.db.retry_task_outcomes() {
+            Ok(summary) => summary.failed != 0,
+            Err(error) => {
+                warn!("Heartbeat retained finalization or transcript export for retry: {}", error);
+                true
+            }
+        };
 
         let mut receipt = PulseReceipt {
             tick_id: tick,
@@ -196,12 +222,12 @@ impl HeartbeatEngine {
             tasks_scanned: tasks_count,
             actions_dispatched: actions,
             notes: format!(
-                "Autonomous tick #{} scanned {} pending tasks, dispatched {} actions, status {}",
-                tick, tasks_count, actions, if degraded { "degraded" } else { "nominal" }
+                "Autonomous tick #{} scanned {} pending tasks, dispatched {} actions",
+                tick, tasks_count, actions
             ),
         };
 
-        if let Err(error) = self.db.record_heartbeat_tick(&receipt) {
+        if let Err(error) = self.db.record_heartbeat_tick(&mut receipt) {
             receipt.status = "degraded";
             receipt.notes.push_str(&format!("; receipt persistence failed: {}", error));
         }
@@ -272,6 +298,46 @@ impl HeartbeatEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::inference::{ChatStream, ChatTurnResponse};
+    use serde_json::Value;
+
+    struct HealthyProbe;
+    #[async_trait::async_trait]
+    impl InferenceEngine for HealthyProbe {
+        fn model_id(&self)->String { "test-health".into() }
+        fn endpoint(&self)->String { "test-only".into() }
+        async fn generate_with_tokens(&self,_:&str,_:Option<&str>,_:Option<f32>,_:Option<u32>)->Result<String,Box<dyn std::error::Error+Send+Sync>> { unreachable!() }
+        async fn generate_chat(&self,_:&[Value],_:Option<f32>,_:Option<u32>)->Result<String,Box<dyn std::error::Error+Send+Sync>> { unreachable!() }
+        async fn generate_chat_with_tools(&self,_:&[Value],_:Option<&[Value]>,_:Option<f32>,_:Option<u32>)->Result<ChatTurnResponse,Box<dyn std::error::Error+Send+Sync>> { unreachable!() }
+        async fn stream_chat(&self,_:&[Value],_:Option<f32>,_:Option<u32>)->Result<ChatStream,Box<dyn std::error::Error+Send+Sync>> { unreachable!() }
+        async fn check_health(&self)->bool { tokio::task::yield_now().await; true }
+    }
+
+    #[tokio::test]
+    async fn test_http_health_client_deadline() {
+        use tokio::io::AsyncReadExt;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let accepted = Arc::new(tokio::sync::Notify::new());
+        let server_accepted = accepted.clone();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0; 1024];
+            assert!(socket.read(&mut request).await.unwrap() != 0);
+            server_accepted.notify_one();
+            std::future::pending::<()>().await;
+            drop(socket);
+        });
+        let client = tokio::spawn(async move { http_model_health(&endpoint).await });
+        tokio::time::timeout(Duration::from_secs(2), accepted.notified()).await.unwrap();
+        tokio::time::pause();
+        tokio::time::advance(HEALTH_ACTION_TIMEOUT).await;
+        tokio::time::resume();
+        let result = tokio::time::timeout(Duration::from_secs(2), client).await;
+        server.abort();
+        let error = result.expect("HTTP client must have its own request deadline").unwrap().unwrap_err();
+        assert!(error.is_timeout());
+    }
 
     #[tokio::test]
     async fn test_heartbeat_pulse_and_task_execution() {
@@ -300,7 +366,7 @@ mod tests {
 
         // The first pulse awaits the health probe while the second one lists
         // tasks, so both see the task unless the first one claimed it.
-        let engine = HeartbeatEngine::new(60, db.clone());
+        let engine = HeartbeatEngine::with_inference(60, db.clone(), Arc::new(HealthyProbe));
         let (a, b) = tokio::join!(engine.pulse_once(), engine.pulse_once());
 
         assert_eq!(a.actions_dispatched + b.actions_dispatched, 1);
