@@ -93,7 +93,9 @@ tests/gates/run.sh anti-slop
 
 - The default inference backend is a mock; `aegis status` output naming "NativeTransformer" refers
   to the mock.
-- The delegated task workflow work G1 to G6 is open in pull requests, not on `main`.
+- The delegated task workflow work G1 to G6: at `main` `727073e9f484e9558e6adbf69090c5ecccd250b3`
+  (2026-10-31) G2 (#61) is merged with the design note `docs/DELEGATED-DAG.md`; G1 (#60) and G3 to
+  G6 (#62 to #65) are open pull requests, not on `main`.
 - The sibling `aien-protocols` revision used by a build is whatever is checked out beside it.
 
 ## Dependencies and provenance
