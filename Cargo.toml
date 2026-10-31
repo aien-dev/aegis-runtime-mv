@@ -39,6 +39,7 @@ aien-inference-protocol = { path = "../aien-protocols/crates/aien-inference-prot
 aien-inference-client = { path = "../aien-protocols/crates/aien-inference-client" }
 
 [dev-dependencies]
+tokio = { version = "1.40", features = ["test-util"] }
 tempfile = "3.17"
 tokio-tungstenite = "0.24"
 
