@@ -29,7 +29,8 @@ not part of the WHOLE-SYSTEM-E2E v1 release; the production runtime is aien-sove
    `[REDACTED_BY_ATLAS_VAULT]`, reads the environment only with `AIEN_DEV_SECRET_FALLBACK=1`.
 4. `src/agent.rs`, `src/heartbeat.rs`, `src/orchestration/`. Multi-turn tool calling on model
    output; task claiming; failure and retry rules (`docs/FAILURE-PROVENANCE.md`,
-   `docs/WORKFLOW-DAG.md`).
+   `docs/WORKFLOW-DAG.md`, `docs/DELEGATED-DAG.md`); the grant gate for effectful workflow tasks
+   (`src/orchestration/grant_gate.rs`) and restart recovery (`src/orchestration/recovery.rs`).
 5. `src/persistence/`, `src/sessions/`, `src/events/`, `src/defense/`, `src/security.rs`.
 6. `install.sh`.
 7. `.github/workflows/aien-verification.yml` (advisory checks, Alpha bundle verification,
@@ -93,9 +94,9 @@ tests/gates/run.sh anti-slop
 
 - The default inference backend is a mock; `aegis status` output naming "NativeTransformer" refers
   to the mock.
-- The delegated task workflow work G1 to G6: at `main` `727073e9f484e9558e6adbf69090c5ecccd250b3`
-  (2026-10-31) G2 (#61) is merged with the design note `docs/DELEGATED-DAG.md`; G1 (#60) and G3 to
-  G6 (#62 to #65) are open pull requests, not on `main`.
+- The delegated task workflow work G1 to G6: at `main` `8c961fc44592208f3221342229884022416b1abc`
+  (2026-10-31) G2 to G6 are merged (#61 to #65), with the design note `docs/DELEGATED-DAG.md`;
+  G1 (#60) was closed as superseded by #61.
 - The sibling `aien-protocols` revision used by a build is whatever is checked out beside it.
 
 ## Dependencies and provenance

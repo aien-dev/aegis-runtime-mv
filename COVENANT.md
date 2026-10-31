@@ -1,7 +1,7 @@
 # Covenant of Open Building
 
 This document states values. It grants no legal rights and restricts none.
-The software license is Apache-2.0 (see LICENSE). Where this covenant and
+The software license is AGPL-3.0-or-later (see LICENSE). Where this covenant and
 LICENSE disagree, LICENSE governs.
 
 ## The ask
@@ -17,7 +17,7 @@ discriminate against independent builders.
 
 ## Scope
 
-This covenant binds no one. It modifies no Apache-2.0 rights, changes no
+This covenant binds no one. It modifies no AGPL-3.0-or-later rights, changes no
 historical license, overrides no third-party terms of service, and creates
 no damages or enforcement mechanism. Legal review of the licensing posture
 is tracked separately and is not closed by this document.
