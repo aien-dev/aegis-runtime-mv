@@ -52,7 +52,7 @@ Results: `WorkflowSnapshot.results` maps task id to a sha256 digest of the resul
 
 ## Restart boundary
 
-Workflow state is in memory only. After a process restart nothing is recovered and no task is resumed or re-run. `WorkflowSnapshot` is serializable (tested) so a later change can persist it, but no schema, table or recovery path exists. A resumed workflow must not re-run a task whose effect is `Uncertain`; that recovery policy is not designed here. Which record owns each fact of a delegated task, and the rebuild rule after a restart, are in [DELEGATED-DAG.md](DELEGATED-DAG.md).
+Workflow state is in memory only. After a process restart nothing is recovered and no task is resumed or re-run. `WorkflowSnapshot` is serializable (tested) so a later change can persist it, but no schema, table or recovery path exists. A resumed workflow must not re-run a task whose effect is `Uncertain`; that recovery policy is not designed here. Which record owns each fact of a delegated task, and the rebuild rule after a restart, are in [DELEGATED-DAG.md](DELEGATED-DAG.md). `src/orchestration/recovery.rs` (#56) implements that rebuild as a pure host function over an `AuthorityLookup` trait, tested against in-memory fakes; nothing stores the pointers yet and no real authority client exists.
 
 ## Not claimed
 
