@@ -123,6 +123,14 @@ pub fn initialize_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
             completed_at TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS task_terminal_events (
+            event_id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL UNIQUE,
+            claim_id TEXT NOT NULL,
+            event_json TEXT NOT NULL,
+            exported INTEGER NOT NULL DEFAULT 0
+        );
+
         CREATE TABLE IF NOT EXISTS memory_crumbs (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL,
@@ -138,5 +146,15 @@ pub fn initialize_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
         );
         ",
     )?;
+    let columns = {
+        let mut stmt = conn.prepare("PRAGMA table_info(tasks)")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    for column in ["claim_id", "owner_id"] {
+        if !columns.iter().any(|name| name == column) {
+            conn.execute_batch(&format!("ALTER TABLE tasks ADD COLUMN {column} TEXT"))?;
+        }
+    }
     Ok(())
 }

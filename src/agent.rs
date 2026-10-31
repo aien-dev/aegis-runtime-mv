@@ -55,6 +55,30 @@ pub struct AgentExecutionResult {
     pub completed: bool,
 }
 
+/// Terminal failures exclude recovered attempts (`retry_failures` on a successful call).
+/// Shared by the producer and workflow adapter so transport success cannot mask tool failure.
+pub fn terminal_tool_failure(steps: &[AgentStep]) -> Option<ToolFault> {
+    let calls = || steps.iter().flat_map(|step| step.tool_calls.iter());
+    if let Some(failure) = calls().filter_map(|call| call.failure.as_ref()).next_back() {
+        return Some(ToolFault::new(
+            failure.class,
+            failure.effect_certainty,
+            failure
+                .cause
+                .first()
+                .map(|cause| cause.message.as_str())
+                .unwrap_or("agent tool call failed"),
+        ));
+    }
+    calls().any(|call| !call.success).then(|| {
+        ToolFault::new(
+            FailureClass::Failed,
+            EffectCertainty::Uncertain,
+            "agent tool call failed without a failure record",
+        )
+    })
+}
+
 #[derive(Clone)]
 pub struct AgentEngine {
     inference: Arc<dyn InferenceEngine>,
@@ -248,6 +272,18 @@ impl AgentEngine {
                 .await?;
 
             let thought = turn_res.reasoning.clone();
+            if turn_res.finish_reason.as_deref() == Some("length") {
+                final_response = turn_res
+                    .content
+                    .filter(|content| !content.trim().is_empty())
+                    .unwrap_or_else(|| "Inference truncated before terminal output.".to_string());
+                steps.push(AgentStep {
+                    step_index: turn,
+                    thought,
+                    tool_calls: Vec::new(),
+                });
+                break;
+            }
             let has_tool_calls = turn_res
                 .tool_calls
                 .as_ref()
@@ -380,12 +416,12 @@ impl AgentEngine {
                 }
             } else {
                 let content = turn_res.content.unwrap_or_default();
-                final_response = if !content.trim().is_empty() {
-                    content
-                } else if let Some(r) = turn_res.reasoning {
-                    r
+                let terminal_text =
+                    !content.trim().is_empty() && turn_res.finish_reason.as_deref() == Some("stop");
+                final_response = if content.trim().is_empty() {
+                    "Inference ended without terminal text.".to_string()
                 } else {
-                    "Task processed with zero textual output.".to_string()
+                    content
                 };
 
                 steps.push(AgentStep {
@@ -394,7 +430,7 @@ impl AgentEngine {
                     tool_calls: Vec::new(),
                 });
 
-                completed = true;
+                completed = terminal_text && terminal_tool_failure(&steps).is_none();
                 break;
             }
         }

@@ -9,6 +9,7 @@ use tracing::info;
 
 use super::async_db::AsyncDatabase;
 use super::sqlite::schema::initialize_schema;
+use super::task_lifecycle::{lock_file, TaskOwner};
 use crate::heartbeat::PulseReceipt;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -42,8 +43,9 @@ pub struct TurnRecord {
 }
 
 pub struct Database {
-    conn: Arc<Mutex<Connection>>,
-    transcript_path: Option<PathBuf>,
+    pub(super) conn: Arc<Mutex<Connection>>,
+    pub(super) transcript_path: Option<PathBuf>,
+    pub(super) owner: TaskOwner,
 }
 
 impl Database {
@@ -53,8 +55,11 @@ impl Database {
         let db = Self {
             conn: Arc::new(Mutex::new(conn)),
             transcript_path,
+            owner: TaskOwner::new(Some(path))?,
         };
         db.init_tables()?;
+        db.recover_abandoned_tasks()?;
+        db.export_terminal_events()?;
         Ok(db)
     }
 
@@ -63,6 +68,7 @@ impl Database {
         let db = Self {
             conn: Arc::new(Mutex::new(conn)),
             transcript_path: None,
+            owner: TaskOwner::new(None)?,
         };
         db.init_tables()?;
         Ok(db)
@@ -108,7 +114,7 @@ impl Database {
                 "response": response,
                 "duration_ms": duration_ms,
             }),
-        );
+        )?;
 
         Ok(())
     }
@@ -138,9 +144,11 @@ impl Database {
         Ok(turns)
     }
 
-    pub fn record_heartbeat_tick(&self, receipt: &PulseReceipt) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
+    /// Projection failure changes the receipt before its authoritative SQLite transaction commits.
+    pub fn record_heartbeat_tick(&self, receipt: &mut PulseReceipt) -> Result<(), rusqlite::Error> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        tx.execute(
             "INSERT OR REPLACE INTO heartbeats (tick_id, timestamp, status, tasks_scanned, actions_dispatched, notes)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
@@ -152,9 +160,18 @@ impl Database {
                 receipt.notes
             ],
         )?;
-
-        self.record_transcript("heartbeat_tick", &receipt);
-        Ok(())
+        if let Err(error) = self.record_transcript("heartbeat_tick", receipt) {
+            receipt.status = "degraded";
+            receipt
+                .notes
+                .push_str(&format!("; receipt projection failed: {}", error));
+            tracing::warn!("Heartbeat transcript projection failed: {}", error);
+            tx.execute(
+                "UPDATE heartbeats SET status=?2,notes=?3 WHERE tick_id=?1",
+                params![receipt.tick_id as i64, receipt.status, receipt.notes],
+            )?;
+        }
+        tx.commit()
     }
 
     pub fn create_task(
@@ -178,7 +195,7 @@ impl Database {
                 "task_type": task_type,
                 "payload": payload,
             }),
-        );
+        )?;
         Ok(())
     }
 
@@ -207,36 +224,6 @@ impl Database {
         Ok(tasks)
     }
 
-    /// Moves a pending task to `running`. Returns `false` when another caller
-    /// already claimed it, so each task runs at most once.
-    pub fn claim_task(&self, id: &str) -> Result<bool, rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
-        let changed = conn.execute(
-            "UPDATE tasks SET status = 'running' WHERE id = ?1 AND status = 'pending'",
-            params![id],
-        )?;
-        Ok(changed == 1)
-    }
-
-    pub fn complete_task(&self, id: &str, result: &str) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
-        let now = Utc::now().to_rfc3339();
-        conn.execute(
-            "UPDATE tasks SET status = 'completed', result = ?1, completed_at = ?2 WHERE id = ?3",
-            params![result, now, id],
-        )?;
-
-        self.record_transcript(
-            "task_completed",
-            &serde_json::json!({
-                "id": id,
-                "result": result,
-                "completed_at": now,
-            }),
-        );
-        Ok(())
-    }
-
     pub fn store_crumb(
         &self,
         key: &str,
@@ -258,7 +245,7 @@ impl Database {
                 "value": value,
                 "namespace": namespace,
             }),
-        );
+        )?;
         Ok(())
     }
 
@@ -288,18 +275,25 @@ impl Database {
         Ok(crumbs)
     }
 
-    pub fn record_transcript<T: Serialize>(&self, event_type: &str, data: &T) {
-        if let Some(ref path) = self.transcript_path {
+    pub fn record_transcript<T: Serialize>(
+        &self,
+        event_type: &str,
+        data: &T,
+    ) -> Result<(), rusqlite::Error> {
+        if let Some(path) = &self.transcript_path {
             let event = serde_json::json!({
                 "timestamp": Utc::now().to_rfc3339(),
                 "event_type": event_type,
                 "data": data,
             });
-            if let Ok(line) = serde_json::to_string(&event) {
-                if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
-                    let _ = writeln!(file, "{}", line);
-                }
-            }
+            let write = || -> std::io::Result<()> {
+                let _writer = lock_file(&path.with_extension("jsonl.lock"), false)?;
+                let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+                writeln!(file, "{}", event)?;
+                file.sync_all()
+            };
+            write().map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         }
+        Ok(())
     }
 }
