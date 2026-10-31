@@ -4,18 +4,6 @@
     "path": ".."
   },
   "extensions": {
-    "generated": {
-      "children": [],
-      "children_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "compiled_at": "2026-10-10T16:05:01Z",
-      "compiler": "crumb-compile/1",
-      "digest": "sha256:14dd72b905c79d44b86b01f4ab43763cf21520fd4e38f077b682e35268010d17",
-      "evidence_files": 0,
-      "evidence_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "files": 5,
-      "generated_at_commit": "e21dab3edbdededb2396a74d0614c797b912bb6a",
-      "source_tree": "sha256:559178d9f324b485ea60b2c5633cae9bcaa92b50f320b9ec3b7a6130230abef2"
-    },
     "owner_lane": "",
     "seed": {
       "files": [

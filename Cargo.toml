@@ -28,6 +28,7 @@ async-trait = "0.1"
 parking_lot = "0.12"
 bytes = "1.6"
 sha2 = "0.10"
+libc = "0.2"
 
 # Canonical AIEN Protocol Crates
 aien-protocol-types = { path = "../aien-protocols/crates/aien-protocol-types" }
@@ -38,6 +39,7 @@ aien-inference-protocol = { path = "../aien-protocols/crates/aien-inference-prot
 aien-inference-client = { path = "../aien-protocols/crates/aien-inference-client" }
 
 [dev-dependencies]
+tokio = { version = "1.40", features = ["test-util"] }
 tempfile = "3.17"
 tokio-tungstenite = "0.24"
 

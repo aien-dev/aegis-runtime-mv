@@ -223,7 +223,7 @@ async fn failing_tool_identifies_step_cause_and_flows_through_event_bus() {
     assert_eq!(f.class, FailureClass::Failed);
     assert_eq!(f.cause[0].message, "disk read error");
     assert!(f.failed_at >= f.created_at);
-    assert!(res.completed);
+    assert!(!res.completed);
 
     let env = rx.try_recv().unwrap();
     assert_eq!(env.sequence, 1);
