@@ -1,6 +1,12 @@
 //! Capability-bound workspace security and canonical path resolution.
 //! Enforces containment for filesystem access and shell execution within authorized workspace roots.
 
+use std::ffi::CString;
+use std::fs::File;
+use std::io::Write;
+use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
@@ -30,6 +36,7 @@ impl std::error::Error for SecurityError {}
 #[derive(Debug, Clone)]
 pub struct WorkspaceCapability {
     root: PathBuf,
+    root_dir: std::sync::Arc<File>,
 }
 
 impl Default for WorkspaceCapability {
@@ -58,7 +65,38 @@ impl WorkspaceCapability {
                 e
             ))
         })?;
-        Ok(Self { root: canonical })
+        // Walk the canonical root from / with no-follow directory opens too:
+        // canonicalize followed by File::open would race a replaced ancestor.
+        let mut root_dir = File::open("/")
+            .map_err(|e| SecurityError::IoError(format!("Failed to open filesystem root: {e}")))?;
+        for component in canonical.components() {
+            if let Component::Normal(name) = component {
+                let name = CString::new(name.as_bytes())
+                    .map_err(|_| SecurityError::InvalidPath("NUL in workspace root".into()))?;
+                let fd = unsafe {
+                    libc::openat(
+                        root_dir.as_raw_fd(),
+                        name.as_ptr(),
+                        libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                    )
+                };
+                if fd < 0 {
+                    return Err(SecurityError::AccessDenied(format!(
+                        "Unsafe workspace root: {}",
+                        std::io::Error::last_os_error()
+                    )));
+                }
+                root_dir = unsafe { File::from_raw_fd(fd) };
+            }
+        }
+        Ok(Self {
+            root: canonical,
+            root_dir: std::sync::Arc::new(root_dir),
+        })
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
     }
 
     /// Automatically detects the active workspace root.
@@ -81,15 +119,7 @@ impl WorkspaceCapability {
                 }
             }
         }
-        Self {
-            root: PathBuf::from(".")
-                .canonicalize()
-                .unwrap_or_else(|_| PathBuf::from(".")),
-        }
-    }
-
-    pub fn root(&self) -> &Path {
-        &self.root
+        Self::new(".").expect("Aegis requires a readable workspace directory")
     }
 
     /// Resolves an existing file path for reading, strictly verifying that it resides within the workspace root.
@@ -130,67 +160,102 @@ impl WorkspaceCapability {
         Ok(canonical)
     }
 
-    /// Resolves a file path for writing. For new files, canonicalizes the lowest existing ancestor directory
-    /// and verifies that the normalized target path stays strictly inside the workspace root.
-    pub fn resolve_write_path(&self, requested: &str) -> Result<PathBuf, SecurityError> {
+    /// Open each component relative to the held workspace directory. No path-based
+    /// containment check is reused for the final open, and no symlink is followed.
+    pub fn write_file(&self, requested: &str, content: &str) -> Result<PathBuf, SecurityError> {
         let trimmed = requested.trim();
         if trimmed.is_empty() {
-            return Err(SecurityError::InvalidPath(
-                "Path cannot be empty".to_string(),
-            ));
+            return Err(SecurityError::InvalidPath("Path cannot be empty".into()));
         }
-
-        let raw_target = if Path::new(trimmed).is_absolute() {
-            PathBuf::from(trimmed)
+        let target = if Path::new(trimmed).is_absolute() {
+            normalize_path(Path::new(trimmed))
         } else {
-            self.root.join(trimmed)
+            normalize_path(&self.root.join(trimmed))
         };
-
-        let normalized = normalize_path(&raw_target);
-
-        let mut cur = normalized.as_path();
-        let mut existing_ancestor = None;
-        while let Some(parent) = cur.parent() {
-            if parent.exists() {
-                let canonical_ancestor = parent.canonicalize().map_err(|e| {
-                    SecurityError::IoError(format!(
-                        "Failed to canonicalize ancestor {}: {}",
-                        parent.display(),
-                        e
-                    ))
-                })?;
-                existing_ancestor = Some(canonical_ancestor);
-                break;
-            }
-            cur = parent;
-        }
-
-        let ancestor = existing_ancestor.ok_or_else(|| {
-            SecurityError::AccessDenied(format!(
-                "No valid ancestor directory found for {}",
-                trimmed
-            ))
+        let relative = target.strip_prefix(&self.root).map_err(|_| {
+            SecurityError::AccessDenied(format!("Path {} escapes workspace", target.display()))
         })?;
-
-        if !ancestor.starts_with(&self.root) {
-            return Err(SecurityError::AccessDenied(format!(
-                "Target ancestor {} escapes authorized workspace root {}",
-                ancestor.display(),
-                self.root.display()
-            )));
+        let mut names = relative.components().map(|c| c.as_os_str()).peekable();
+        if names.peek().is_none() {
+            return Err(SecurityError::InvalidPath("Path must name a file".into()));
         }
-
-        if !normalized.starts_with(&self.root) {
-            return Err(SecurityError::AccessDenied(format!(
-                "Normalized target path {} escapes authorized workspace root {}",
-                normalized.display(),
-                self.root.display()
-            )));
+        let mut dir = self
+            .root_dir
+            .try_clone()
+            .map_err(|e| SecurityError::IoError(e.to_string()))?;
+        while let Some(name) = names.next() {
+            let name = CString::new(name.as_bytes())
+                .map_err(|_| SecurityError::InvalidPath("NUL in path".into()))?;
+            if names.peek().is_some() {
+                let mut fd = unsafe {
+                    libc::openat(
+                        dir.as_raw_fd(),
+                        name.as_ptr(),
+                        libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                    )
+                };
+                if fd < 0 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::NotFound
+                {
+                    let rc = unsafe { libc::mkdirat(dir.as_raw_fd(), name.as_ptr(), 0o777) };
+                    if rc < 0
+                        && std::io::Error::last_os_error().kind()
+                            != std::io::ErrorKind::AlreadyExists
+                    {
+                        return Err(SecurityError::IoError(
+                            std::io::Error::last_os_error().to_string(),
+                        ));
+                    }
+                    fd = unsafe {
+                        libc::openat(
+                            dir.as_raw_fd(),
+                            name.as_ptr(),
+                            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                        )
+                    };
+                }
+                if fd < 0 {
+                    return Err(SecurityError::AccessDenied(format!(
+                        "Unsafe workspace directory: {}",
+                        std::io::Error::last_os_error()
+                    )));
+                }
+                dir = unsafe { File::from_raw_fd(fd) };
+            } else {
+                let fd = unsafe {
+                    libc::openat(
+                        dir.as_raw_fd(),
+                        name.as_ptr(),
+                        libc::O_WRONLY
+                            | libc::O_CREAT
+                            | libc::O_NOFOLLOW
+                            | libc::O_CLOEXEC
+                            | libc::O_NONBLOCK,
+                        0o666,
+                    )
+                };
+                if fd < 0 {
+                    return Err(SecurityError::AccessDenied(format!(
+                        "Unsafe workspace file: {}",
+                        std::io::Error::last_os_error()
+                    )));
+                }
+                let mut file = unsafe { File::from_raw_fd(fd) };
+                let metadata = file
+                    .metadata()
+                    .map_err(|e| SecurityError::IoError(e.to_string()))?;
+                if !metadata.is_file() || metadata.nlink() != 1 {
+                    return Err(SecurityError::AccessDenied(
+                        "Target is not a private regular file".into(),
+                    ));
+                }
+                file.set_len(0)
+                    .map_err(|e| SecurityError::IoError(e.to_string()))?;
+                file.write_all(content.as_bytes())
+                    .map_err(|e| SecurityError::IoError(e.to_string()))?;
+            }
         }
-
-        Ok(normalized)
+        Ok(target)
     }
-
     /// Resolves an existing directory path (for listing or working directory), ensuring it stays within root.
     pub fn resolve_dir_path(&self, requested: Option<&str>) -> Result<PathBuf, SecurityError> {
         let target = match requested {
@@ -394,10 +459,8 @@ mod tests {
         let dir = tempdir().unwrap();
         let cap = WorkspaceCapability::new(dir.path()).unwrap();
 
-        let write_target = cap.resolve_write_path("nested/test.txt").unwrap();
+        let write_target = cap.write_file("nested/test.txt", "secure data").unwrap();
         assert!(write_target.starts_with(cap.root()));
-        std::fs::create_dir_all(write_target.parent().unwrap()).unwrap();
-        std::fs::write(&write_target, "secure data").unwrap();
 
         let read_target = cap.resolve_read_path("nested/test.txt").unwrap();
         assert_eq!(read_target, write_target.canonicalize().unwrap());
@@ -405,7 +468,7 @@ mod tests {
         let escape_read = cap.resolve_read_path("../../etc/passwd");
         assert!(escape_read.is_err());
 
-        let escape_write = cap.resolve_write_path("../../../evil.sh");
+        let escape_write = cap.write_file("../../../evil.sh", "not written");
         assert!(escape_write.is_err());
     }
 

@@ -262,12 +262,7 @@ impl InferenceEngine for HttpInferenceBackend {
                             finish_reason: choice.finish_reason,
                         });
                     }
-                    Ok(ChatTurnResponse {
-                        content: Some("Zero response received from engine".to_string()),
-                        reasoning: None,
-                        tool_calls: None,
-                        finish_reason: Some("stop".to_string()),
-                    })
+                    Err(anyhow::anyhow!("Inference returned an empty choices array").into())
                 } else {
                     let err_status = res.status();
                     let err_text = res.text().await.unwrap_or_default();

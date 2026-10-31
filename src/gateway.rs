@@ -125,6 +125,7 @@ pub struct AgentRunRequest {
 
 #[derive(Serialize)]
 pub struct AgentRunResponse {
+    /// `completed` only for terminal output, otherwise `incomplete`.
     pub status: &'static str,
     pub prompt: String,
     pub final_response: String,
@@ -146,7 +147,11 @@ pub async fn agent_run_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(AgentRunResponse {
-        status: "completed",
+        status: if result.completed {
+            "completed"
+        } else {
+            "incomplete"
+        },
         prompt: payload.prompt,
         final_response: result.final_response,
         steps: result.steps,
@@ -536,6 +541,7 @@ async fn handle_socket(mut socket: WebSocket, state: GatewayState) {
                                     Ok(exec_result) => {
                                         let out = json!({
                                             "type": "agent_result",
+                                            "status": if exec_result.completed { "completed" } else { "incomplete" },
                                             "result": exec_result,
                                         });
                                         let _ = socket.send(Message::Text(out.to_string())).await;
