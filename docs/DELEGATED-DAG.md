@@ -93,6 +93,24 @@ Reasons:
 1. README line 3: the desk, effect authorization and fail-closed behaviour live in aien-sovereign-core, and AEGIS is outside release v1. A delegated DAG that runs real effects must sit beside them.
 2. The existing DAG (`workflow.rs`, 1022 lines at `971d450`, and 25 tests in `tests/workflow_dag_tests.rs`) lives here. Moving it first would add a port to every child issue without changing what they prove. The trait seams make the later move a change of host, not of rules.
 
-## 5. What is not here
+## 5. Fire drills (G4, aegis-runtime-mv#57), frozen before code
 
-No code, no schema, no wire bytes. The fire-drill table is added by G4 (aegis-runtime-mv#57). The physical Pi and Spark run belongs to lane H.
+Frozen 2026-10-16 in its own commit, before any drill test was written. A row changes only by a later commit that says why; the tests are fitted to the rows, never the reverse.
+
+Host stand-ins only. The stand-in world plays the authorities of section 2: a desk that issues single-use grants and opens one effect intent per grant, an effect ledger (OPEN, DONE, NOT_DONE, UNRESOLVED) whose reconcile checks the world, receipts, and an **effect counter** that counts every time the effect touches the world. A "kill" drops everything AEGIS holds in memory; the stand-in world survives, as durable records would. "Restart" is `rebuild` (G3) over the pointers AEGIS had stored before the kill. A human re-approval is the test issuing a new grant only when the rebuilt status asks for one.
+
+Every row checks two things at the end: the effect counter shows no duplicate final effect, and every status reported on the way was true when it was reported. With one task at a time, every row gives the identical sequence of steps and states on two runs.
+
+| Row | Drill | Stand-in setup | Truthful status after the restart | Final effect count | Deliberate break that must turn the row red | First cut |
+|---|---|---|---|---|---|---|
+| 1 | Kill between approval and effect | Grant issued and its id stored; the desk opened the intent; the kill comes before AEGIS stored the intent id and before the effect | `write` Uncertain (the desk names the OPEN intent), `report` Pending. After reconcile (NOT_DONE): `write` WaitingForApproval, since the grant is spent. After a new grant and the resumed run: Completed | 1 | A task with no stored intent id is treated as not started (the desk's intent is ignored) | Test |
+| 2 | Kill after the effect, before acknowledgement | Intent opened, effect applied, kill before the ack and before the receipt is stored | `write` Uncertain, `report` Pending, no new approval asked. After reconcile (DONE, receipt): Completed, and `report` Ready | 1 | Retry when uncertain: an OPEN intent is treated as needing a new approval, so a human approves it again | Test |
+| 3 | The same request sent twice with one idempotence key | The first request ran to Completed and its pointers are stored under its key | The second request is answered with the first run id and Completed; nothing starts | 1 | Admission ignores the key and starts a fresh run for the repeat | Test |
+| 4 | Link cut while text is streaming | `text_chunk` ordinals 0 to n sent, link drops mid stream | Task state comes from the records, unchanged by the cut; chunks resume after the last ordinal the Pi holds, none repeated as new | 0 (compute only) | Resend from ordinal 0 as new chunks | Later |
+| 5 | Pi restart, then a resume request carrying the old cause id | Workflow mid run when the Pi restarts | Resume summary built from `rebuild`; a resume request with a different cause id is refused | 1 | Accept a resume request whose cause id differs from the stored one | Later |
+| 6 | Cancel racing a completion | Cancel arrives while the effect is being acknowledged | Completed if the ledger says DONE with a receipt; Cancelled only if no intent was opened; Uncertain otherwise. Never Cancelled while the ledger says DONE | At most 1 | Report Cancelled whenever a cancel was received | Later |
+| 7 | A prerequisite failing | `write` fails with no effect | `write` Failed, `report` Skipped and never run | 0 | Run the dependent anyway | Later |
+
+## 6. What is not here
+
+No schema and no wire bytes. The physical Pi and Spark run belongs to lane H.
