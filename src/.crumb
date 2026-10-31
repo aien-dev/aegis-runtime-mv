@@ -30,55 +30,6 @@
     }
   ],
   "extensions": {
-    "generated": {
-      "children": [
-        {
-          "digest": "c61e63cc51ed3f296a3939294f5eed75022d0b7c8dbc07360bb77780c686971c",
-          "last_commit": "1b0c299",
-          "name": "defense",
-          "purpose": "Directory src/defense. Purpose not yet described by a human."
-        },
-        {
-          "digest": "14dd72b905c79d44b86b01f4ab43763cf21520fd4e38f077b682e35268010d17",
-          "last_commit": "1eba7a7",
-          "name": "events",
-          "purpose": "Directory src/events. Purpose not yet described by a human."
-        },
-        {
-          "digest": "d6e81a3dc01fab71d3df73bfaf79046e2e76849115757771caa1189fc441e081",
-          "last_commit": "1b0c299",
-          "name": "execution",
-          "purpose": "Directory src/execution. Purpose not yet described by a human."
-        },
-        {
-          "digest": "1b9510d040879e1db70a47bf1eed2de5a28a13186197947d68e9f4b89ee41cfa",
-          "last_commit": "19a586f",
-          "name": "orchestration",
-          "purpose": "Directory src/orchestration. Purpose not yet described by a human."
-        },
-        {
-          "digest": "dc247d1a321533bf38e95c0ab235fb86ae78fbd333a48ee90b3e3f201b9f3a26",
-          "last_commit": "8724580",
-          "name": "persistence",
-          "purpose": "Directory src/persistence. Purpose not yet described by a human."
-        },
-        {
-          "digest": "2602e12dd28848f2cb925986aa0275b7fb8b814fd3390bb5e54c13b4a2d380a8",
-          "last_commit": "d8d4585",
-          "name": "sessions",
-          "purpose": "Directory src/sessions. Purpose not yet described by a human."
-        }
-      ],
-      "children_root": "sha256:14b80163941e81638a47522b899cf21e0b5782c9bb70c35339425f763e526e2c",
-      "compiled_at": "2026-10-16T19:55:01Z",
-      "compiler": "crumb-compile/1",
-      "digest": "sha256:ac8ed35741466ade612a2f3a86b8c7d464e73ea47eb902d54e1b614f8a74455d",
-      "evidence_files": 0,
-      "evidence_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "files": 51,
-      "generated_at_commit": "19a586f21b70f924e1e68ca2a72bd6d7aac0528f",
-      "source_tree": "sha256:915a7f2a50bd067f4f81326aa40bca35632396dfb7c4740306867427929240db"
-    },
     "owner_lane": "",
     "seed": {
       "files": [

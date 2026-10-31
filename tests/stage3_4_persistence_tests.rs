@@ -268,11 +268,11 @@ fn test_legacy_task_claim_is_exclusive() {
     db.create_task("task_claim", "shell_exec", "echo once")
         .unwrap();
 
-    assert!(db.claim_task("task_claim").unwrap());
-    assert!(!db.claim_task("task_claim").unwrap());
-    assert!(!db.claim_task("no_such_task").unwrap());
+    let claim = db.claim_task("task_claim").unwrap().unwrap();
+    assert!(db.claim_task("task_claim").unwrap().is_none());
+    assert!(db.claim_task("no_such_task").unwrap().is_none());
     assert!(db.list_pending_tasks().unwrap().is_empty());
 
-    db.complete_task("task_claim", "done").unwrap();
-    assert!(!db.claim_task("task_claim").unwrap());
+    db.complete_task(&claim, "done").unwrap();
+    assert!(db.claim_task("task_claim").unwrap().is_none());
 }
