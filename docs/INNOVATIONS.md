@@ -75,5 +75,5 @@ Verified on NVIDIA Grace Blackwell GB10:
 
 ## 6. License and Commons Covenant
 
-Licensed under the **Apache License 2.0 with LLVM Exception** (SPDX: `Apache-2.0 WITH LLVM-exception`). See [LICENSE](../LICENSE). Project values live in the nonbinding [COVENANT.md](../COVENANT.md), which grants and restricts no legal rights.
+Licensed under the **GNU Affero General Public License v3.0 or later** (SPDX: `AGPL-3.0-or-later`). See [LICENSE](../LICENSE). Project values live in the nonbinding [COVENANT.md](../COVENANT.md), which grants and restricts no legal rights.
 Copyright (c) 2026 Drake Stapleton <aien@aienos.com> & AIEN <aien@aienos.com>.

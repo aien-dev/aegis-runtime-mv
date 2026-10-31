@@ -1,0 +1,9 @@
+# Dependabot: monthly version updates for the pinned GitHub Actions.
+# Pull requests only; nothing merges itself. Security advisories are handled by GitHub
+# Dependabot security updates on the repository settings.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

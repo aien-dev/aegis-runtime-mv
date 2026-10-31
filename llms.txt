@@ -3,7 +3,7 @@
 
 ## Overview
 - Repository: https://github.com/aien-dev/aegis-runtime
-- License: Apache-2.0 WITH LLVM-exception, with the nonbinding COVENANT.md.
+- License: AGPL-3.0-or-later, with the nonbinding COVENANT.md.
 - Language: Rust 2021
 - Runtime: Pure native compiled binaries. Zero Node.js. Zero Python daemons.
 

@@ -30,7 +30,7 @@ jobs:
       RECEIPTS_RAW: https://raw.githubusercontent.com/aien-dev/aien-receipts/main
     steps:
       - name: Checkout the head under test
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
@@ -52,7 +52,7 @@ jobs:
           fi
 
       - name: Checkout the pinned crumb tool source (aien-architecture @ 12ad0141b41ec67ef5aa51cb4e1815894c1083bb)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: aien-dev/aien-architecture
           ref: 12ad0141b41ec67ef5aa51cb4e1815894c1083bb
@@ -69,13 +69,13 @@ jobs:
         run: crumb verify .
 
       - name: Install Stable Rust Toolchain (for the pinned aien-test build)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch head 2026-10-26
         if: steps.anchors.outputs.enrolled == 'true'
         with:
           components: rustfmt
 
       - name: Checkout the pinned aien-test source (aien-sovereign-core @ ${{ env.AIEN_TEST_PIN }})
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         if: steps.anchors.outputs.enrolled == 'true'
         with:
           repository: aien-dev/aien-sovereign-core
@@ -88,7 +88,7 @@ jobs:
 
       # Cache dependencies only, never verifier executables or candidate-controlled target output.
       - name: Cache the pinned aien-test dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         if: steps.anchors.outputs.enrolled == 'true'
         with:
           path: |
@@ -139,7 +139,7 @@ jobs:
       RECEIPTS_RAW: https://raw.githubusercontent.com/aien-dev/aien-receipts/main
     steps:
       - name: Checkout the tagged commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
@@ -166,12 +166,12 @@ jobs:
           echo "verify.pub (origin/main): $(cat "$RUNNER_TEMP/anchors/verify.pub")"
 
       - name: Install Stable Rust Toolchain (for the pinned aien-test build)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch head 2026-10-26
         with:
           components: rustfmt
 
       - name: Checkout the pinned aien-test source (aien-sovereign-core @ ${{ env.AIEN_TEST_PIN }})
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: aien-dev/aien-sovereign-core
           ref: ${{ env.AIEN_TEST_PIN }}
@@ -182,7 +182,7 @@ jobs:
 
       # Cache dependencies only, never verifier executables or candidate-controlled target output.
       - name: Cache the pinned aien-test dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/.cargo/registry
