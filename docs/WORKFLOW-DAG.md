@@ -52,8 +52,16 @@ Results: `WorkflowSnapshot.results` maps task id to a sha256 digest of the resul
 
 ## Restart boundary
 
-Workflow state is in memory only. After a process restart nothing is recovered and no task is resumed or re-run. `WorkflowSnapshot` is serializable (tested) so a later change can persist it, but no schema, table or recovery path exists. A resumed workflow must not re-run a task whose effect is `Uncertain`; that recovery policy is not designed here. Which record owns each fact of a delegated task, and the rebuild rule after a restart, are in [DELEGATED-DAG.md](DELEGATED-DAG.md).
+Workflow state is in memory only. After a process restart nothing is recovered and no task is resumed or re-run. `WorkflowSnapshot` is serializable (tested) so a later change can persist it, but no schema, table or recovery path exists. A resumed workflow must not re-run a task whose effect is `Uncertain`; that recovery policy is not designed here. Which record owns each fact of a delegated task, and the rebuild rule after a restart, are in [DELEGATED-DAG.md](DELEGATED-DAG.md). `src/orchestration/recovery.rs` (#56) implements that rebuild as a pure host function over an `AuthorityLookup` trait, tested against in-memory fakes; nothing stores the pointers yet and no real authority client exists.
 
 ## Not claimed
 
 AEGIS is outside release v1; nothing here is wired into a release path or the frozen E2E contract. Timings printed by the demo test compare `max_parallel = 1` against 2 with sleep-based fake tasks on CPU. They are informational, and no GPU or throughput claim is made.
+
+## Progress messages for the Pi
+
+`src/orchestration/progress.rs` (#58) maps recorded task state to the PST1 Draft v0 message types (aien-dev/aien-protocols-mv#28): Pending and Ready are `queued`; Skipped is `failed` with reason `PREREQUISITE_FAILED`; Uncertain, and Failed with Uncertain effect certainty, are `uncertain_after_disconnect` (not known), never `failed`. Ids come from the stored records, ordinals count each task's messages from 0, and a completed task carries its result digest, never raw output. A message that would need a guess (no cause id, no result digest, no action digest) is refused. The first cut has no encoding and no network; the resume summary and the bytes are later.
+
+## Grant gate for effectful tasks
+
+`src/orchestration/grant_gate.rs` (#59) wraps an effectful task body. It starts only under a desk grant bound to the request's objective id and cause id, and checks the grant again after preparation, immediately before the effect. No grant leaves the task waiting for approval; an unbound binding, a forged id, a spent, expired or revoked grant, a foreign objective or cause, and an unreachable desk are refused with a named reason and no effect. The gate checks and never spends: the effect ledger spends the grant when it opens the effect intent. The desk is a trait tested with a fake; the real adapter waits on sovereign-core#379, and binding to the INTERPLANE canonical request digest waits on aien-protocols-mv#33.

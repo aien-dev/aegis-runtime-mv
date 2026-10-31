@@ -232,6 +232,14 @@ impl WorkflowSpec {
         self.tasks.iter().map(|t| t.id.clone()).collect()
     }
 
+    /// The prerequisites of `id`, in the order they were listed.
+    pub fn dependencies(&self, id: &TaskId) -> Option<&[TaskId]> {
+        self.tasks
+            .iter()
+            .find(|t| &t.id == id)
+            .map(|t| t.deps.as_slice())
+    }
+
     pub fn len(&self) -> usize {
         self.tasks.len()
     }
