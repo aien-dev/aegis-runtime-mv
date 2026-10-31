@@ -57,3 +57,7 @@ Workflow state is in memory only. After a process restart nothing is recovered a
 ## Not claimed
 
 AEGIS is outside release v1; nothing here is wired into a release path or the frozen E2E contract. Timings printed by the demo test compare `max_parallel = 1` against 2 with sleep-based fake tasks on CPU. They are informational, and no GPU or throughput claim is made.
+
+## Progress messages for the Pi
+
+`src/orchestration/progress.rs` (#58) maps recorded task state to the PST1 Draft v0 message types (aien-dev/aien-protocols-mv#28): Pending and Ready are `queued`; Skipped is `failed` with reason `PREREQUISITE_FAILED`; Uncertain, and Failed with Uncertain effect certainty, are `uncertain_after_disconnect` (not known), never `failed`. Ids come from the stored records, ordinals count each task's messages from 0, and a completed task carries its result digest, never raw output. A message that would need a guess (no cause id, no result digest, no action digest) is refused. The first cut has no encoding and no network; the resume summary and the bytes are later.

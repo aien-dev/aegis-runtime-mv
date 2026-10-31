@@ -1,4 +1,5 @@
 pub mod budget;
+pub mod progress;
 pub mod recovery;
 pub mod run;
 pub mod termination;
