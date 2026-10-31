@@ -61,3 +61,7 @@ AEGIS is outside release v1; nothing here is wired into a release path or the fr
 ## Progress messages for the Pi
 
 `src/orchestration/progress.rs` (#58) maps recorded task state to the PST1 Draft v0 message types (aien-dev/aien-protocols-mv#28): Pending and Ready are `queued`; Skipped is `failed` with reason `PREREQUISITE_FAILED`; Uncertain, and Failed with Uncertain effect certainty, are `uncertain_after_disconnect` (not known), never `failed`. Ids come from the stored records, ordinals count each task's messages from 0, and a completed task carries its result digest, never raw output. A message that would need a guess (no cause id, no result digest, no action digest) is refused. The first cut has no encoding and no network; the resume summary and the bytes are later.
+
+## Grant gate for effectful tasks
+
+`src/orchestration/grant_gate.rs` (#59) wraps an effectful task body. It starts only under a desk grant bound to the request's objective id and cause id, and checks the grant again after preparation, immediately before the effect. No grant leaves the task waiting for approval; an unbound binding, a forged id, a spent, expired or revoked grant, a foreign objective or cause, and an unreachable desk are refused with a named reason and no effect. The gate checks and never spends: the effect ledger spends the grant when it opens the effect intent. The desk is a trait tested with a fake; the real adapter waits on sovereign-core#379, and binding to the INTERPLANE canonical request digest waits on aien-protocols-mv#33.
